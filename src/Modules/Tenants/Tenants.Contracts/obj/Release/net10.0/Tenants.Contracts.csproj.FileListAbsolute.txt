@@ -1,0 +1,12 @@
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/bin/Release/net10.0/Tenants.Contracts.deps.json
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/bin/Release/net10.0/Tenants.Contracts.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/bin/Release/net10.0/Tenants.Contracts.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.GeneratedMSBuildEditorConfig.editorconfig
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.AssemblyInfoInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.AssemblyInfo.cs
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.csproj.CoreCompileInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.sourcelink.json
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/refint/Tenants.Contracts.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/Tenants.Contracts.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Tenants/Tenants.Contracts/obj/Release/net10.0/ref/Tenants.Contracts.dll

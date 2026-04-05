@@ -1,0 +1,24 @@
+# AI Service Requirements
+# Python 3.11+
+
+# Web framework (for HTTP endpoint)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Async support
+aiohttp==3.9.1
+
+# Data validation & serialization
+pydantic==2.5.0
+
+# Environment configuration
+python-dotenv==1.0.0
+
+# Logging & observability
+python-json-logger==2.0.7
+
+# Development & testing (optional, can be moved to dev-requirements.txt)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.12.1
+ruff==0.1.8

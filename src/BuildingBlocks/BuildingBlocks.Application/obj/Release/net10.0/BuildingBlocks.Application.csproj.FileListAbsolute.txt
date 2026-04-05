@@ -1,0 +1,12 @@
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/bin/Release/net10.0/BuildingBlocks.Application.deps.json
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/bin/Release/net10.0/BuildingBlocks.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/bin/Release/net10.0/BuildingBlocks.Application.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.AssemblyInfoInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.AssemblyInfo.cs
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.csproj.CoreCompileInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.sourcelink.json
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/refint/BuildingBlocks.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/BuildingBlocks.Application.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/BuildingBlocks/BuildingBlocks.Application/obj/Release/net10.0/ref/BuildingBlocks.Application.dll

@@ -1,0 +1,12 @@
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/bin/Release/net10.0/Jobs.Application.deps.json
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/bin/Release/net10.0/Jobs.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/bin/Release/net10.0/Jobs.Application.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.AssemblyInfoInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.AssemblyInfo.cs
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.csproj.CoreCompileInputs.cache
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.sourcelink.json
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/refint/Jobs.Application.dll
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/Jobs.Application.pdb
+/Users/knguyen/Desktop/event-processing-platform/src/Modules/Jobs/Jobs.Application/obj/Release/net10.0/ref/Jobs.Application.dll
