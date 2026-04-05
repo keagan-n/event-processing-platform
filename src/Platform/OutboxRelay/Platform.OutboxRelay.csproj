@@ -10,4 +10,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Modules\Jobs\Jobs.Application\Jobs.Application.csproj" />
+    <ProjectReference Include="..\..\Modules\Jobs\Jobs.Infrastructure\Jobs.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Common\Application\Common.Application.csproj" />
+    <ProjectReference Include="..\..\Common\Domain\Common.Domain.csproj" />
+    <ProjectReference Include="..\..\Common\Infrastructure\Common.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Common\Observability\Common.Observability.csproj" />
+  </ItemGroup>
 </Project>
