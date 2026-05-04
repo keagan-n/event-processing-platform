@@ -229,5 +229,7 @@ TestResults/
 # Notes
 .txt
 
-bin/
-obj/
+# Local environment variables / secrets
+.env
+.env.*
+!.env.example

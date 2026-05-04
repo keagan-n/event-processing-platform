@@ -1,10 +1,17 @@
-namespace Jobs.Application;
-
 using Jobs.Domain;
+
+namespace Jobs.Application;
 
 public sealed class JobSubmissionService : IJobSubmissionService
 {
-    public Task<SubmitJobResult> SubmitAsync(
+    private readonly IJobRepository _jobRepository;
+
+    public JobSubmissionService(IJobRepository jobRepository)
+    {
+        _jobRepository = jobRepository;
+    }
+
+    public async Task<SubmitJobResult> SubmitAsync(
         SubmitJobCommand command,
         CancellationToken cancellationToken)
     {
@@ -13,13 +20,14 @@ public sealed class JobSubmissionService : IJobSubmissionService
             jobType: command.JobType,
             payload: command.Payload);
 
-        var result = new SubmitJobResult(
+        await _jobRepository.AddAsync(job, cancellationToken);
+        await _jobRepository.SaveChangesAsync(cancellationToken);
+
+        return new SubmitJobResult(
             JobId: job.Id,
             TenantId: job.TenantId,
             JobType: job.JobType,
             Status: job.Status.ToString(),
             CreatedUtc: job.CreatedUtc);
-
-        return Task.FromResult(result);
     }
 }

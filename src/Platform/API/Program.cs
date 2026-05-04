@@ -1,13 +1,34 @@
+using DotNetEnv;
 using Jobs.Application;
+using Jobs.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Platform.Api.Contracts.Jobs;
+
+Env.TraversePath().Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Register framework services
 builder.Services.AddOpenApi();
 
+// Register database
+builder.Services.AddDbContext<JobsDbContext>(options =>
+{
+    var connectionString = Environment.GetEnvironmentVariable("JOBS_DATABASE_CONNECTION_STRING");
+
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException(
+            "JOBS_DATABASE_CONNECTION_STRING environment variable is not set.");
+    }
+
+    options.UseNpgsql(connectionString);
+});
 // Register application services
 builder.Services.AddScoped<IJobSubmissionService, JobSubmissionService>();
+
+// Register infrastructure services
+builder.Services.AddScoped<IJobRepository, JobRepository>();
 
 var app = builder.Build();
 
