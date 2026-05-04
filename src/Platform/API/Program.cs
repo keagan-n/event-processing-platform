@@ -26,6 +26,7 @@ builder.Services.AddDbContext<JobsDbContext>(options =>
 });
 // Register application services
 builder.Services.AddScoped<IJobSubmissionService, JobSubmissionService>();
+builder.Services.AddScoped<IJobStatusService, JobStatusService>();
 
 // Register infrastructure services
 builder.Services.AddScoped<IJobRepository, JobRepository>();
@@ -67,5 +68,33 @@ app.MapPost("/jobs", async (
     return Results.Created($"/jobs/{response.JobId}", response);
 })
 .WithName("SubmitJob");
+
+// Get job status
+app.MapGet("/jobs/{jobId:guid}/status", async (
+    Guid jobId,
+    IJobStatusService jobStatusService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await jobStatusService.GetStatusAsync(jobId, cancellationToken);
+
+    if (result is null)
+    {
+        return Results.NotFound(new
+        {
+            message = "Job not found.",
+            jobId
+        });
+    }
+
+    var response = new GetJobStatusResponse(
+        JobId: result.JobId,
+        TenantId: result.TenantId,
+        JobType: result.JobType,
+        Status: result.Status,
+        CreatedUtc: result.CreatedUtc);
+
+    return Results.Ok(response);
+})
+.WithName("GetJobStatus");
 
 app.Run();
