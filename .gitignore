@@ -225,3 +225,9 @@ TestResults/
 
 # macOS
 .DS_Store
+
+# Notes
+.txt
+
+bin/
+obj/

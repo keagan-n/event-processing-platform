@@ -1,112 +1,203 @@
-# Event Processing Platform — Development Guide
+# Job Processing Platform — Development Guide
 
 ## Project Foundation
 
-This is a **multi-tenant, event-driven, rate-limited processing platform** with **mandatory AI integration**. Tenancy is not bolted on—it shapes every layer.
+This is a **simplified job-processing platform** built with C#/.NET (modular monolith), PostgreSQL, and a background worker. It supports the core MVP workflow: submit jobs → persist → process → update status → read status.
 
-- **Core responsibility**: Process events reliably at scale with per-tenant rate limits, audit trails, and AI-powered decision logic
-- **Multi-tenancy model**: Tenant ID is always required; isolated quotas, separate logical event streams
-- **Rate limiting**: Hard limits enforced at event ingestion and AI invocation; graceful degradation when approached
-- **AI integration**: Not optional—baked into workflows; guide AI decisions through feature extraction and result validation
+**Out of scope**: Redis, AI service calls, queues, outbox pattern, retries, DLQ, authentication, rate limiting. Add only if explicitly requested.
 
-## Architecture Principles
+## Architecture & Boundaries
 
-1. **Event-first design**: Store the event, then decide what to do. Immutable append-only event log is the source of truth.
-2. **Tenant isolation at the query level**: WHERE tenant_id = ? on every query; no cross-tenant visibility in results.
-3. **Rate limits as a first-class concern**: Quotas are checked early; backpressure/rejection logged and metered.
-4. **Async by default**: Event handlers dispatch asynchronously; synchronous responses only when latency permits.
-5. **Fail safely**: Unprocessed events remain in queue; failed AI decisions trigger alerts and manual review paths.
+The codebase follows clean layered architecture with clear responsibilities:
+
+```
+Jobs.Domain           # Job aggregate, JobStatus enum, business rules (no dependencies)
+Jobs.Application      # Commands, handlers, services, repository abstractions
+Jobs.Infrastructure   # DbContext, EF mappings, repository implementations
+Platform.API          # HTTP endpoints (minimal logic)
+Platform.Worker       # Background job processor
+```
+
+**Key principle**: Each layer depends inward; Domain is pristine (no EF, no HTTP, no infrastructure).
+
+### Domain Layer (`Jobs.Domain`)
+- Contains `Job` aggregate root with status transitions (Pending → Processing → Completed/Failed)
+- `JobStatus` enum and any domain value objects
+- Business invariants enforced in domain (e.g., only Pending jobs can start processing)
+- Zero framework dependencies—pure C# logic
+
+### Application Layer (`Jobs.Application`)
+- Command/query handlers orchestrating use cases (submit, process, update status, read)
+- Service abstractions (`IJobRepository`, `IJobService`) defined here
+- DTO/request/response records for contracts
+- No persistence logic—delegates to repository abstractions
+
+### Infrastructure Layer (`Jobs.Infrastructure`)
+- `JobsDbContext` for EF Core configuration and queries
+- Entity mappings, indexes, and migrations
+- `EfJobRepository` implementing `IJobRepository`
+- All PostgreSQL concerns encapsulated here
+
+### API Layer (`Platform.API`)
+- HTTP endpoints forwarding to application layer
+- Minimal logic; mainly translate HTTP → domain models → response
+- Return appropriate status codes (200, 201, 400, 500)
+
+### Worker (`Platform.Worker`)
+- Background service polling for Pending jobs
+- Executes application commands to process and update status
+- Graceful shutdown on cancellation token
+
+## Repository Structure
+
+```
+src/
+├── Modules/Jobs/
+│   ├── Jobs.Domain/           # Entities, enums, value objects
+│   ├── Jobs.Application/       # Handlers, commands, services (abstractions)
+│   └── Jobs.Infrastructure/    # DbContext, EF mappings, repository impl.
+├── Platform/
+│   ├── API/
+│   │   ├── Program.cs
+│   │   ├── Contracts/Jobs/    # Request/response DTOs
+│   │   └── Endpoints/Jobs/    # HTTP routes
+│   ├── Worker/
+│   │   └── Program.cs         # Background service
+│   └── OutboxRelay/           # (Not used for MVP)
+└── Common/                     # Shared domain abstractions
+```
 
 ## Code Standards
 
-### Language-Specific
-See: `.github/instructions/csharp-dotnet.instructions.md`, `.github/instructions/python.instructions.md`
+### C# / .NET Rules
+See `.github/instructions/dotnet.instructions.md` for detailed patterns. Key points:
 
-### Database & Persistence
-See: `.github/instructions/database.instructions.md`
+- **Async by default**: Methods handling I/O (DB, HTTP) use `async`/`await` with `CancellationToken ct`
+- **Dependency injection**: Register services in `Program.cs`, inject via constructor
+- **No business logic in `Program.cs`**: Keep setup minimal
+- **Naming**: `SubmitJobCommand`, `ProcessJobHandler`, `IJobRepository` (I-prefix for interfaces)
 
-### AI & ML Integration
-See: `.github/instructions/ai-integration.instructions.md`
-
-## Build, Test, Dependencies
-
-**Install** (macOS):
-```bash
-# .NET 8+
-dotnet --version
-
-# Python 3.11+ (for Python components)
-python3 --version
-
-# PostgreSQL 15+, Redis 7+
-brew services list | grep postgres
-redis-cli ping
-
-# k6 for load testing
-brew install k6
+### Entity & Aggregate Design
+```csharp
+public class Job : AggregateRoot
+{
+    public required Guid JobId { get; set; }
+    public required Guid TenantId { get; set; }
+    public required string JobType { get; set; }
+    public required JobStatus Status { get; set; }
+    public DateTime CreatedUtc { get; set; }
+    
+    // Domain methods enforce invariants
+    public void MarkProcessing()
+    {
+        if (Status != JobStatus.Pending)
+            throw new InvalidOperationException("Only pending jobs can transition to processing.");
+        Status = JobStatus.Processing;
+    }
+}
 ```
 
-**Test**:
-```bash
-# Unit tests
-dotnet test --configuration Release
+### Repository Pattern
+Define abstractions in Application; implement in Infrastructure:
+```csharp
+// Jobs.Application/Services/IJobRepository.cs
+public interface IJobRepository
+{
+    Task<Job?> GetByIdAsync(Guid jobId, CancellationToken ct);
+    Task SaveAsync(Job job, CancellationToken ct);
+    Task<IReadOnlyList<Job>> GetByStatusAsync(JobStatus status, CancellationToken ct);
+}
 
-# Integration tests (requires local DB/Redis)
-dotnet test --filter Category=Integration
-
-# Load testing
-k6 run tests/load/*.js
+// Jobs.Infrastructure/Persistence/EfJobRepository.cs
+public class EfJobRepository : IJobRepository
+{
+    public async Task<Job?> GetByIdAsync(Guid jobId, CancellationToken ct)
+        => await _context.Jobs.FirstOrDefaultAsync(j => j.JobId == jobId, ct);
+    
+    public async Task SaveAsync(Job job, CancellationToken ct)
+    {
+        _context.Jobs.Add(job);
+        await _context.SaveChangesAsync(ct);
+    }
+}
 ```
 
-**Build**:
+## Workflow Examples
+
+### Adding a New Endpoint
+1. Define request/response records in `Platform.API/Contracts/Jobs/`
+2. Create command/handler in `Jobs.Application/`
+3. Add endpoint in `Platform.API/Endpoints/Jobs/`
+4. Register handler in `Program.cs` (DI)
+5. **Test**: Call endpoint, verify response and DB state
+
+### Updating Job Status
+1. Add transition method to `Job` aggregate (enforce invariant)
+2. Create command + handler in Application
+3. Call from Worker or API endpoint
+4. Migration only needed if schema changes
+5. **Test**: Verify job transitions correctly; reject invalid transitions
+
+### Adding a Database Field
+1. Add property to `Job` entity in Domain
+2. Configure in `JobsDbContext.OnModelCreating()` (Infrastructure)
+3. Add migration: `dotnet ef migrations add <MigrationName> -p src/Modules/Jobs/Jobs.Infrastructure -s src/Platform/API`
+4. Apply: `dotnet ef database update -p src/Modules/Jobs/Jobs.Infrastructure -s src/Platform/API`
+5. Update Application layer as needed
+6. **Test**: Verify field persists and queries work
+
+## Local Development (macOS)
+
+**Prerequisites**:
 ```bash
-dotnet build --configuration Release
+dotnet --version       # .NET 8+
+brew services start postgresql-15
+brew services start redis-server  # If needed later
 ```
 
-## Common Patterns
+**Build & Test**:
+```bash
+dotnet build --configuration Debug
+dotnet test
+```
 
-### Adding a New Event Type
-1. Define schema in `Domain/Events/<DomainArea>Events.cs`
-2. Add migration: `dotnet ef migrations add Add<EventName>Event`
-3. Create handler in `Application/EventHandlers/<EventType>Handler.cs`
-4. Handler must extract tenant_id, check rate limits, log outcome
-5. If AI-enriched: use AI integration module; catch failures gracefully
+**Run Locally**:
+```bash
+# Terminal 1: API
+dotnet run --project src/Platform/API --configuration Debug
 
-### Adding a New Rate-Limited Operation
-1. Register quota key in `Infrastructure/RateLimiting/QuotaRegistry.cs`
-2. Check quota before operation: `await _rateLimiter.CheckQuotaAsync(tenantId, operationKey)`
-3. If denied, return 429 with Retry-After header
-4. Log both accepts and rejections for dashboard visibility
+# Terminal 2: Worker
+dotnet run --project src/Platform/Worker --configuration Debug
+```
 
-### Adding AI to a Workflow
-1. See `.github/instructions/ai-integration.instructions.md`
-2. Extract features from event (structured inputs, not raw text)
-3. Call AI via client with tenant context
-4. Validate result against business rules before action
-5. If confidence < threshold or error: log, queue for manual review, do not fail the event
+**Database**:
+```bash
+# Apply migrations
+dotnet ef database update -p src/Modules/Jobs/Jobs.Infrastructure -s src/Platform/API
 
-## Local Development Notes (macOS)
-
-- Use `brew services` for Postgres/Redis; confirm they start on boot
-- For AWS work: `aws configure --profile dev-local` with test credentials
-- Kill hanging processes: `lsof -i :5432` (Postgres), `lsof -i :6379` (Redis)
-- Python venv: `python3 -m venv venv && source venv/bin/activate`
-
-## Documentation References
-
-- **Architecture**: See `docs/architecture.md` (to be created)
-- **Event schema**: See `docs/events.md`
-- **Rate limiting**: See `Infrastructure/RateLimiting/README.md`
-- **AI integration**: See `docs/ai-integration.md`
-- **Database**: See `docs/database.md`
+# Add migration after schema change
+dotnet ef migrations add AddFieldName -p src/Modules/Jobs/Jobs.Infrastructure
+```
 
 ## What Copilot Should Do
 
-✓ Generate event handlers with tenant checks and error handling
-✓ Create database migrations and indexes for multi-tenant access patterns
-✓ Write Python scripts for AI feature extraction and result processing
-✓ Suggest rate limit checks at entry points
-✓ Propose structured logging with tenant context
-✗ Do NOT generate single-tenant code without tenant_id parameter
-✗ Do NOT skip rate limit checks "to make things simple"
-✗ Do NOT call AI APIs synchronously in hot paths
+✓ Generate domain entities with business invariants  
+✓ Create application handlers following CQRS patterns  
+✓ Implement EF Core repository methods with async/await  
+✓ Add HTTP endpoints with minimal logic  
+✓ Use dependency injection in Program.cs  
+✓ Generate async methods with CancellationToken  
+✓ Add migrations when schema changes  
+✓ Explain each change: files touched, why, how to test  
+
+✗ Do NOT add Redis, AI calls, or rate limiting without explicit request  
+✗ Do NOT add retries, outbox pattern, or DLQ  
+✗ Do NOT place business logic in API endpoints  
+✗ Do NOT add Domain dependencies on Infrastructure or EF Core  
+✗ Do NOT skip CancellationToken on async I/O methods  
+✗ Do NOT rewrite large sections—make small, reviewable changes  
+
+## References
+
+- **Instruction files**: See `.github/instructions/dotnet.instructions.md` for C#/.NET patterns
+- **Project**: Modular monolith with PostgreSQL; extensible for future modules beyond Jobs

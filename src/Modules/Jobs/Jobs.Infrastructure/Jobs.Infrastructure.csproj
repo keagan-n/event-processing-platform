@@ -1,18 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\Jobs.Application\Jobs.Application.csproj" />
-    <ProjectReference Include="..\Jobs.Domain\Jobs.Domain.csproj" />
-    <ProjectReference Include="..\Jobs.Contracts\Jobs.Contracts.csproj" />
-    <ProjectReference Include="..\..\..\Common\Infrastructure\Common.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\..\Common\Application\Common.Application.csproj" />
-    <ProjectReference Include="..\..\..\Common\Domain\Common.Domain.csproj" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Jobs.Application\Jobs.Application.csproj" />
+    <ProjectReference Include="..\Jobs.Domain\Jobs.Domain.csproj" />
+  </ItemGroup>
 
 </Project>
