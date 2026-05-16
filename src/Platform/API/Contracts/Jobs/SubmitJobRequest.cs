@@ -1,6 +1,6 @@
 namespace Platform.Api.Contracts.Jobs;
 
 public sealed record SubmitJobRequest(
-    Guid TenantId,
+    string TenantId,
     string JobType,
     string Payload);

@@ -1,6 +1,6 @@
 namespace Jobs.Application;
 
 public sealed record SubmitJobCommand(
-    Guid TenantId,
+    string TenantId,
     string JobType,
     string Payload);

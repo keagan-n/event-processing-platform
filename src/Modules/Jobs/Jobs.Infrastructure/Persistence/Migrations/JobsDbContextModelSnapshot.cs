@@ -50,8 +50,10 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("status");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("tenant_id");
 
                     b.HasKey("Id");

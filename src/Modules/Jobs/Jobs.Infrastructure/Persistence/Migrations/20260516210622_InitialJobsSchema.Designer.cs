@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Jobs.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(JobsDbContext))]
-    [Migration("20260504052655_InitialJobsSchema")]
+    [Migration("20260516210622_InitialJobsSchema")]
     partial class InitialJobsSchema
     {
         /// <inheritdoc />
@@ -53,8 +53,10 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("status");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("tenant_id");
 
                     b.HasKey("Id");

@@ -3,7 +3,7 @@ namespace Jobs.Domain;
 public sealed class Job
 {
     public Guid Id { get; private set; }
-    public Guid TenantId { get; private set; }
+    public string TenantId { get; private set; }
     public string JobType { get; private set; }
     public string Payload { get; private set; }
     public JobStatus Status { get; private set; }
@@ -11,7 +11,7 @@ public sealed class Job
 
     private Job(
         Guid id,
-        Guid tenantId,
+        string tenantId,
         string jobType,
         string payload,
         JobStatus status,
@@ -25,9 +25,9 @@ public sealed class Job
         CreatedUtc = createdUtc;
     }
 
-    public static Job Create(Guid tenantId, string jobType, string payload)
+    public static Job Create(string tenantId, string jobType, string payload)
     {
-        if (tenantId == Guid.Empty)
+        if (string.IsNullOrWhiteSpace(tenantId))
         {
             throw new ArgumentException("TenantId is required.", nameof(tenantId));
         }

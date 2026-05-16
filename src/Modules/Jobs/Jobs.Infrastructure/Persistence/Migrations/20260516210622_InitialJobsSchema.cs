@@ -16,7 +16,7 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    tenant_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    tenant_id = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     job_type = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     payload = table.Column<string>(type: "text", nullable: false),
                     status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),

@@ -4,6 +4,66 @@ A simplified job-processing platform built with **C#/.NET**, **PostgreSQL**, and
 
 The goal is to build a small but realistic backend system that demonstrates core distributed-system concepts without adding unnecessary complexity too early.
 
+## Local Development Commands
+
+Common commands for running the API and PostgreSQL locally (MVP-focused).
+
+1. Start PostgreSQL (Docker Compose):
+
+```bash
+docker compose up -d
+```
+
+2. Confirm containers are running (expected container: `event-platform-postgres`):
+
+```bash
+docker ps
+```
+
+3. Build the full solution:
+
+```bash
+dotnet build src/Platform.sln
+```
+
+4. Run the API:
+
+```bash
+dotnet run --project src/Platform/API/Platform.Api.csproj
+```
+
+5. Test API endpoints:
+
+```text
+GET http://localhost:5200/health
+POST http://localhost:5200/jobs
+```
+
+6. Stop the API:
+
+```
+Ctrl + C
+```
+
+7. Stop Docker services:
+
+```bash
+docker compose down
+```
+
+Typical local workflow (minimal):
+
+```bash
+docker compose up -d
+dotnet build src/Platform.sln
+dotnet run --project src/Platform/API/Platform.Api.csproj
+```
+
+- Docker/PostgreSQL must be running before testing persistence.
+- The API reads the database connection string from `.env` via `DotNetEnv` in `Program.cs`.
+- Do not commit `.env` to source control; commit a `.env.example` as a safe template.
+- Worker processing is not implemented yet; the API is the primary runnable component for the MVP.
+
 ## What This Project Does
 
 The MVP supports a simple job lifecycle:

@@ -28,6 +28,7 @@ public sealed class JobsDbContext : DbContext
 
             entity.Property(job => job.TenantId)
                 .HasColumnName("tenant_id")
+                .HasMaxLength(255)
                 .IsRequired();
 
             entity.Property(job => job.JobType)
