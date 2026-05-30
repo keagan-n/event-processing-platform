@@ -1,5 +1,7 @@
 namespace Jobs.Application;
 
+using System.Text.Json;
+
 public sealed class JobProcessingService : IJobProcessingService
 {
     private readonly IJobRepository _jobRepository;
@@ -26,6 +28,11 @@ public sealed class JobProcessingService : IJobProcessingService
             markedProcessing = true;
             await _jobRepository.SaveChangesAsync(cancellationToken);
 
+            if (ShouldForceFailure(job.Payload))
+            {
+                throw new InvalidOperationException("Forced failure requested via payload.");
+            }
+
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
 
             job.MarkCompleted();
@@ -42,6 +49,25 @@ public sealed class JobProcessingService : IJobProcessingService
             }
 
             throw;
+        }
+    }
+
+    private static bool ShouldForceFailure(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+
+            if (!document.RootElement.TryGetProperty("forceFailure", out var forceFailureElement))
+            {
+                return false;
+            }
+
+            return forceFailureElement.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 }
