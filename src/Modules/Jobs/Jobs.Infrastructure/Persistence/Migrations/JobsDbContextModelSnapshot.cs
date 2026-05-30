@@ -29,9 +29,21 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_utc");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_utc");
+
+                    b.Property<DateTime?>("FailedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("failed_utc");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("text")
+                        .HasColumnName("failure_reason");
 
                     b.Property<string>("JobType")
                         .IsRequired()
@@ -43,6 +55,10 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("payload");
+
+                    b.Property<DateTime?>("StartedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_utc");
 
                     b.Property<string>("Status")
                         .IsRequired()

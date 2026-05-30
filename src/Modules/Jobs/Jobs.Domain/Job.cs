@@ -8,6 +8,10 @@ public sealed class Job
     public string Payload { get; private set; }
     public JobStatus Status { get; private set; }
     public DateTime CreatedUtc { get; private set; }
+    public DateTime? StartedUtc { get; private set; }
+    public DateTime? CompletedUtc { get; private set; }
+    public DateTime? FailedUtc { get; private set; }
+    public string? FailureReason { get; private set; }
 
     private Job(
         Guid id,
@@ -23,6 +27,13 @@ public sealed class Job
         Payload = payload;
         Status = status;
         CreatedUtc = createdUtc;
+    }
+
+    private Job()
+    {
+        TenantId = string.Empty;
+        JobType = string.Empty;
+        Payload = string.Empty;
     }
 
     public static Job Create(string tenantId, string jobType, string payload)
@@ -44,20 +55,49 @@ public sealed class Job
 
         return new Job(
             id: Guid.NewGuid(),
-            tenantId: tenantId,
+            tenantId: tenantId.Trim(),
             jobType: jobType.Trim(),
             payload: payload,
             status: JobStatus.Pending,
             createdUtc: DateTime.UtcNow);
     }
 
-    public void MarkQueued()
+    public void MarkProcessing()
     {
         if (Status != JobStatus.Pending)
         {
-            throw new InvalidOperationException($"Cannot move job from {Status} to Queued.");
+            throw new InvalidOperationException($"Cannot move job from {Status} to Processing.");
         }
 
-        Status = JobStatus.Queued;
+        Status = JobStatus.Processing;
+        StartedUtc = DateTime.UtcNow;
+    }
+
+    public void MarkCompleted()
+    {
+        if (Status != JobStatus.Processing)
+        {
+            throw new InvalidOperationException($"Cannot move job from {Status} to Completed.");
+        }
+
+        Status = JobStatus.Completed;
+        CompletedUtc = DateTime.UtcNow;
+    }
+
+    public void MarkFailed(string failureReason)
+    {
+        if (Status != JobStatus.Processing)
+        {
+            throw new InvalidOperationException($"Cannot move job from {Status} to Failed.");
+        }
+
+        if (string.IsNullOrWhiteSpace(failureReason))
+        {
+            throw new ArgumentException("Failure reason is required.", nameof(failureReason));
+        }
+
+        Status = JobStatus.Failed;
+        FailedUtc = DateTime.UtcNow;
+        FailureReason = failureReason.Trim();
     }
 }

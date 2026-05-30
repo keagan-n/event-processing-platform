@@ -55,6 +55,18 @@ public sealed class JobsDbContext : DbContext
 
             entity.HasIndex(job => job.CreatedUtc)
                 .HasDatabaseName("ix_jobs_created_utc");
+
+            entity.Property(job => job.StartedUtc)
+                .HasColumnName("started_utc");
+
+            entity.Property(job => job.CompletedUtc)
+                .HasColumnName("completed_utc");
+
+            entity.Property(job => job.FailedUtc)
+                .HasColumnName("failed_utc");
+
+            entity.Property(job => job.FailureReason)
+                .HasColumnName("failure_reason");
         });
     }
 }
