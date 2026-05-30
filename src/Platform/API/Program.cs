@@ -58,6 +58,11 @@ app.MapPost("/jobs", async (
 
     var result = await jobSubmissionService.SubmitAsync(command, cancellationToken);
 
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(new { errors = result.Errors });
+    }
+
     var response = new SubmitJobResponse(
         JobId: result.JobId,
         TenantId: result.TenantId,

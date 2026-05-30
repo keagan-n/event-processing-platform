@@ -15,6 +15,13 @@ public sealed class JobSubmissionService : IJobSubmissionService
         SubmitJobCommand command,
         CancellationToken cancellationToken)
     {
+        var errors = Validate(command);
+
+        if (errors.Count > 0)
+        {
+            return SubmitJobResult.Failure(errors);
+        }
+
         var job = Job.Create(
             tenantId: command.TenantId,
             jobType: command.JobType,
@@ -23,11 +30,33 @@ public sealed class JobSubmissionService : IJobSubmissionService
         await _jobRepository.AddAsync(job, cancellationToken);
         await _jobRepository.SaveChangesAsync(cancellationToken);
 
-        return new SubmitJobResult(
-            JobId: job.Id,
-            TenantId: job.TenantId,
-            JobType: job.JobType,
-            Status: job.Status.ToString(),
-            CreatedUtc: job.CreatedUtc);
+        return SubmitJobResult.Success(
+            jobId: job.Id,
+            tenantId: job.TenantId,
+            jobType: job.JobType,
+            status: job.Status.ToString(),
+            createdUtc: job.CreatedUtc);
+    }
+
+    private static List<string> Validate(SubmitJobCommand command)
+    {
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(command.TenantId))
+        {
+            errors.Add("TenantId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.JobType))
+        {
+            errors.Add("JobType is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Payload))
+        {
+            errors.Add("Payload is required.");
+        }
+
+        return errors;
     }
 }
