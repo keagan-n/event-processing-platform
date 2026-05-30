@@ -6,7 +6,7 @@ The goal is to build a small but realistic backend system that demonstrates core
 
 ## Local Development Commands
 
-Common commands for running the API and PostgreSQL locally (MVP-focused).
+Common commands for running PostgreSQL, API, and Worker locally (MVP-focused).
 
 1. Start PostgreSQL (Docker Compose):
 
@@ -26,26 +26,33 @@ docker ps
 dotnet build src/Platform.sln
 ```
 
-4. Run the API:
+4. Run the API (terminal 1):
 
 ```bash
 dotnet run --project src/Platform/API/Platform.Api.csproj
 ```
 
-5. Test API endpoints:
+5. Run the Worker (terminal 2):
+
+```bash
+dotnet run --project src/Platform/Worker/Platform.Worker.csproj
+```
+
+6. Test API endpoints:
 
 ```text
 GET http://localhost:5200/health
 POST http://localhost:5200/jobs
+GET http://localhost:5200/jobs/{jobId}/status
 ```
 
-6. Stop the API:
+7. Stop the API/Worker:
 
 ```
 Ctrl + C
 ```
 
-7. Stop Docker services:
+8. Stop Docker services:
 
 ```bash
 docker compose down
@@ -55,14 +62,27 @@ Typical local workflow (minimal):
 
 ```bash
 docker compose up -d
-dotnet build src/Platform.sln
 dotnet run --project src/Platform/API/Platform.Api.csproj
+dotnet run --project src/Platform/Worker/Platform.Worker.csproj
 ```
 
 - Docker/PostgreSQL must be running before testing persistence.
 - The API reads the database connection string from `.env` via `DotNetEnv` in `Program.cs`.
 - Do not commit `.env` to source control; commit a `.env.example` as a safe template.
-- Worker processing is not implemented yet; the API is the primary runnable component for the MVP.
+- Worker processing is implemented and part of the MVP verification flow.
+
+## Current MVP Status
+
+Implemented and verified:
+
+- `GET /health`
+- `POST /jobs`
+- `GET /jobs/{jobId}/status`
+- Worker polling loop (~2s) via `Platform.Worker`
+- Worker delegates processing to `IJobProcessingService` (no direct `JobsDbContext` usage in worker logic)
+- Lifecycle transitions:
+  - Normal: `Pending -> Processing -> Completed`
+  - Forced failure: `Pending -> Processing -> Failed`
 
 ## What This Project Does
 
@@ -107,18 +127,14 @@ Currently implemented:
 - Minimal API
 - `GET /health`
 - `POST /jobs`
+- `GET /jobs/{jobId}/status`
+- PostgreSQL persistence
+- Worker processing loop
 - API -> Application -> Domain flow
 - Job domain entity
 - Job status enum
-- Manual Postman testing
-
-Not implemented yet:
-
-- PostgreSQL persistence
-- `GET /jobs/{jobId}/status`
-- Worker processing
-- Worker-driven status updates
-- Failure handling
+- Lifecycle timestamps and failure reason tracking
+- Manual API/Worker verification
 
 ## Architecture Summary
 
@@ -296,7 +312,7 @@ Example request:
 
 ```json
 {
-  "tenantId": "11111111-1111-1111-1111-111111111111",
+  "tenantId": "tenant-demo",
   "jobType": "ai.summary",
   "payload": "{\"text\":\"Summarize this content\"}"
 }
@@ -307,7 +323,7 @@ Example response:
 ```json
 {
   "jobId": "generated-guid",
-  "tenantId": "11111111-1111-1111-1111-111111111111",
+  "tenantId": "tenant-demo",
   "jobType": "ai.summary",
   "status": "Pending",
   "createdUtc": "timestamp"
@@ -316,7 +332,41 @@ Example response:
 
 ### `GET /jobs/{jobId}/status`
 
-Planned endpoint.
+Returns the persisted current job status.
+
+Example response:
+
+```json
+{
+  "jobId": "generated-guid",
+  "tenantId": "tenant-demo",
+  "jobType": "ai.summary",
+  "status": "Completed",
+  "createdUtc": "timestamp"
+}
+```
+
+### Example payloads
+
+Normal job payload:
+
+```json
+{
+  "tenantId": "tenant-demo",
+  "jobType": "ai.summary",
+  "payload": "{\"text\":\"Summarize this content\"}"
+}
+```
+
+Forced-failure payload:
+
+```json
+{
+  "tenantId": "tenant-demo",
+  "jobType": "ai.summary",
+  "payload": "{\"text\":\"Summarize this content\",\"forceFailure\":true}"
+}
+```
 
 Expected response:
 

@@ -1,5 +1,7 @@
 # Worker Processing Milestone
 
+Status: Complete
+
 ## Goal
 
 Implement the first working `Platform.Worker` job processor.
@@ -78,14 +80,11 @@ Every 2 seconds:
   if job processed, continue loop
 ```
 
-## Acceptance Criteria
+## Acceptance Checklist
 
-This milestone is done when:
-
-1. API submits job with `Pending` status.
-2. Worker picks up pending job.
-3. Status becomes `Processing`.
-4. After simulated work, status becomes `Completed`.
-5. `GET /jobs/{jobId}/status` reflects the status changes.
-6. DBeaver shows updated status columns.
-7. Build succeeds.
+- [x] Docker PostgreSQL running
+- [x] API running
+- [x] Worker running
+- [x] Normal job transitions `Pending -> Processing -> Completed`
+- [x] Forced-failure job transitions `Pending -> Processing -> Failed`
+- [x] DBeaver shows lifecycle timestamps and failure reason where applicable

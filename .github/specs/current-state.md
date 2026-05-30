@@ -83,6 +83,8 @@ JobSubmissionService
 IJobStatusService
 JobStatusService
 IJobRepository
+IJobProcessingService
+JobProcessingService
 ```
 
 ### Infrastructure
@@ -107,9 +109,6 @@ Secrets are loaded from `.env` using DotNetEnv.
 ## Not Implemented
 
 ```text
-Platform.Worker processing
-IJobProcessingService fully wired into Worker
-background polling loop
 Redis
 rate limiting
 AI calls
@@ -123,14 +122,19 @@ automated tests
 
 ## Next Milestone
 
-Implement Worker processing:
+Worker processing is complete and verified.
+
+Verified lifecycle transitions:
 
 ```text
 Pending -> Processing -> Completed
+Pending -> Processing -> Failed
 ```
 
-with failure support:
+Forced failure verification exists via payload marker:
 
-```text
-Processing -> Failed
+```json
+{ "forceFailure": true }
 ```
+
+`Platform.Worker` delegates processing to `Jobs.Application` through `IJobProcessingService`.
