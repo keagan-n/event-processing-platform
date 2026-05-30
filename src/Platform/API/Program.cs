@@ -60,7 +60,11 @@ app.MapPost("/jobs", async (
 
     if (!result.Succeeded)
     {
-        return Results.BadRequest(new { errors = result.Errors });
+        return Results.BadRequest(new
+        {
+            message = "Validation failed.",
+            errors = result.Errors
+        });
     }
 
     var response = new SubmitJobResponse(

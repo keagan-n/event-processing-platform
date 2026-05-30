@@ -80,6 +80,8 @@ Implemented and verified:
 - `GET /jobs/{jobId}/status`
 - Worker polling loop (~2s) via `Platform.Worker`
 - Worker delegates processing to `IJobProcessingService` (no direct `JobsDbContext` usage in worker logic)
+- Submit-job validation for required `tenantId`, `jobType`, and `payload`
+- Invalid submit requests return `400 Bad Request`; valid submit requests return `201 Created`
 - Lifecycle transitions:
   - Normal: `Pending -> Processing -> Completed`
   - Forced failure: `Pending -> Processing -> Failed`
@@ -307,6 +309,7 @@ Example response:
 ### `POST /jobs`
 
 Submits a new job.
+`tenantId`, `jobType`, and `payload` are required and cannot be empty/whitespace.
 
 Example request:
 
@@ -327,6 +330,19 @@ Example response:
   "jobType": "ai.summary",
   "status": "Pending",
   "createdUtc": "timestamp"
+}
+```
+
+Validation failure response (`400 Bad Request`):
+
+```json
+{
+  "message": "Validation failed.",
+  "errors": [
+    "TenantId is required.",
+    "JobType is required.",
+    "Payload is required."
+  ]
 }
 ```
 

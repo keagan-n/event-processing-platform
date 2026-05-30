@@ -23,6 +23,9 @@ GET /jobs/{jobId}/status
 ```
 
 `POST /jobs` persists jobs to PostgreSQL.
+`POST /jobs` validates required fields (`TenantId`, `JobType`, `Payload`).
+Invalid submit requests return `400 Bad Request`.
+Valid submit requests return `201 Created`.
 
 `GET /jobs/{jobId}/status` reads status from PostgreSQL.
 
@@ -138,3 +141,4 @@ Forced failure verification exists via payload marker:
 ```
 
 `Platform.Worker` delegates processing to `Jobs.Application` through `IJobProcessingService`.
+Worker lifecycle behavior is unchanged by submit validation hardening.

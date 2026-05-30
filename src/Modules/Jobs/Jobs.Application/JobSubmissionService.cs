@@ -22,10 +22,14 @@ public sealed class JobSubmissionService : IJobSubmissionService
             return SubmitJobResult.Failure(errors);
         }
 
+        var tenantId = command.TenantId.Trim();
+        var jobType = command.JobType.Trim();
+        var payload = command.Payload.Trim();
+
         var job = Job.Create(
-            tenantId: command.TenantId,
-            jobType: command.JobType,
-            payload: command.Payload);
+            tenantId: tenantId,
+            jobType: jobType,
+            payload: payload);
 
         await _jobRepository.AddAsync(job, cancellationToken);
         await _jobRepository.SaveChangesAsync(cancellationToken);
