@@ -4,7 +4,11 @@
 
 This is a **simplified job-processing platform** built with C#/.NET (modular monolith), PostgreSQL, and a background worker. It supports the core MVP workflow: submit jobs → persist → process → update status → read status.
 
-**Out of scope**: Redis, AI service calls, queues, outbox pattern, retries, DLQ, authentication, rate limiting. Add only if explicitly requested.
+Current worker behavior is PostgreSQL polling (working MVP), not the final queue-based direction.
+
+**Removed from active scope**: Redis, OutboxRelay, outbox pattern.
+
+**Roadmap order**: queue-based dispatch first, then Python AI integration, then retries, then rate limiting.
 
 ## Architecture & Boundaries
 
@@ -63,7 +67,7 @@ src/
 │   │   └── Endpoints/Jobs/    # HTTP routes
 │   ├── Worker/
 │   │   └── Program.cs         # Background service
-│   └── OutboxRelay/           # (Not used for MVP)
+│   └── OutboxRelay/           # (Removed from active scope)
 └── Common/                     # Shared domain abstractions
 ```
 
@@ -152,7 +156,6 @@ public class EfJobRepository : IJobRepository
 ```bash
 dotnet --version       # .NET 8+
 brew services start postgresql-15
-brew services start redis-server  # If needed later
 ```
 
 **Build & Test**:
@@ -190,12 +193,18 @@ dotnet ef migrations add AddFieldName -p src/Modules/Jobs/Jobs.Infrastructure
 ✓ Add migrations when schema changes  
 ✓ Explain each change: files touched, why, how to test  
 
-✗ Do NOT add Redis, AI calls, or rate limiting without explicit request  
-✗ Do NOT add retries, outbox pattern, or DLQ  
+✗ Do NOT add Redis, outbox pattern, or OutboxRelay unless explicitly redesigned  
+✗ Do NOT skip roadmap order: queue dispatch -> AI integration -> retries -> rate limiting  
 ✗ Do NOT place business logic in API endpoints  
 ✗ Do NOT add Domain dependencies on Infrastructure or EF Core  
 ✗ Do NOT skip CancellationToken on async I/O methods  
 ✗ Do NOT rewrite large sections—make small, reviewable changes  
+
+Queue/outbox tradeoff note to keep explicit in design docs:
+
+- Direct DB save + queue publish is simpler but non-atomic.
+- If publish fails after save, dispatch can be lost.
+- Production can solve this with outbox/transactional messaging, but outbox is intentionally out of active scope for this portfolio MVP.
 
 ## References
 

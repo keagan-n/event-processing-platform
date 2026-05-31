@@ -10,6 +10,8 @@ The current working flow is:
 Client -> Platform.API -> Jobs.Application -> Jobs.Domain -> Jobs.Infrastructure -> PostgreSQL
 ```
 
+Current worker behavior is PostgreSQL polling. This is the working MVP behavior, not the final queue-based direction.
+
 ## Implemented
 
 ### API
@@ -112,20 +114,42 @@ Secrets are loaded from `.env` using DotNetEnv.
 ## Not Implemented
 
 ```text
-Redis
-rate limiting
+Queue-based dispatch
 AI calls
-queue
-outbox
 retries
+rate limiting
 DLQ
 auth
 automated tests
 ```
 
+Removed from active scope:
+
+```text
+Redis
+OutboxRelay
+outbox pattern
+```
+
 ## Next Milestone
 
-Worker processing is complete and verified.
+Worker processing is complete and verified (polling MVP).
+
+Next active implementation order:
+
+```text
+1) Queue-based job dispatch
+2) Python AI service integration
+3) Retries after AI integration
+4) Rate limiting after queue + AI + retries
+```
+
+Rate limiting constraint:
+
+```text
+Do not use Redis-backed rate limiting by default.
+Prefer PostgreSQL-backed or simple in-memory MVP rate limiting unless explicitly redesigned.
+```
 
 Verified lifecycle transitions:
 
@@ -142,3 +166,11 @@ Forced failure verification exists via payload marker:
 
 `Platform.Worker` delegates processing to `Jobs.Application` through `IJobProcessingService`.
 Worker lifecycle behavior is unchanged by submit validation hardening.
+
+Outbox tradeoff note:
+
+```text
+For this portfolio MVP, DB save + queue publish is intentionally non-atomic (simpler path).
+If publish fails after DB save, a queue message can be lost.
+Production systems use outbox/transactional messaging to solve this, but outbox is intentionally out of active scope.
+```

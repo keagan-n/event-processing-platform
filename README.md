@@ -106,19 +106,28 @@ In scope:
 - Update job status through a defined lifecycle
 - Query job status with `GET /jobs/{jobId}/status`
 
-Deferred until after the MVP:
+Deferred until after the current MVP:
 
-- Redis
-- Rate limiting
-- Python AI service calls
-- Queues
-- Outbox pattern
-- Retries
+- Queue-based job dispatch (next active implementation)
+- Python AI service integration (after queue dispatch)
+- Retries (after AI integration)
+- Rate limiting (after queue + AI + retries)
 - Dead-letter queue
 - Authentication
 - Authorization
 - k6 performance testing
 - Advanced observability
+
+Removed from active scope:
+
+- Redis
+- OutboxRelay
+- Outbox pattern
+
+Rate limiting constraint for later roadmap work:
+
+- Do not use Redis-backed rate limiting unless explicitly redesigned.
+- Prefer PostgreSQL-backed or simple in-memory MVP rate limiting.
 
 ## Current Implementation Status
 
@@ -224,15 +233,9 @@ Processing -> Failed
 
 The domain layer owns these transitions so status cannot be changed arbitrarily by the API, worker, or infrastructure code.
 
-## Why PostgreSQL Polling First?
+## Polling MVP vs Queue Direction
 
-A more advanced version could use:
-
-```text
-API -> Database + Outbox -> Queue -> Worker
-```
-
-The MVP intentionally starts simpler:
+The current working MVP intentionally uses:
 
 ```text
 API -> PostgreSQL
@@ -245,7 +248,24 @@ This proves the core lifecycle first:
 Submitted -> Persisted -> Processed -> Status Updated
 ```
 
-Queues, outbox relay, retries, and dead-letter handling can be added later after the core loop works.
+This polling path is current behavior, not the final direction.
+
+Next active direction:
+
+```text
+API persists job in PostgreSQL
+API publishes queue message (jobId)
+Worker consumes message
+Worker loads job by jobId
+Worker processes via Jobs.Application
+```
+
+Outbox tradeoff for this portfolio MVP:
+
+- Direct DB write + queue publish is simpler but not atomic.
+- A job can be saved while queue publish fails, which can lose dispatch.
+- Production systems commonly solve this with outbox/transactional messaging.
+- Outbox is intentionally out of active scope for this portfolio MVP.
 
 ## Repository Structure
 

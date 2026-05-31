@@ -67,7 +67,7 @@ if it needs project references or packages.
 - Domain methods enforce status transitions.
 - Keep polling simple.
 - Process one job at a time for MVP.
-- Do not add queues, outbox, retries, DLQ, AI calls, or Redis.
+- This milestone intentionally used PostgreSQL polling and is complete.
 
 ## Polling Behavior
 
@@ -78,6 +78,41 @@ Every 2 seconds:
   call ProcessNextPendingJobAsync
   if no job found, wait
   if job processed, continue loop
+```
+
+## Next Direction (Not Yet Implemented)
+
+Queue-based dispatch is the next active implementation direction:
+
+```text
+API persists job
+API publishes queue message with jobId
+Worker consumes queue message
+Worker loads job by jobId
+Worker processes through Jobs.Application
+```
+
+After queue dispatch:
+
+```text
+Python AI integration
+then retries
+then rate limiting
+```
+
+Rate limiting note:
+
+```text
+Future rate limiting should not be Redis-backed unless explicitly redesigned.
+Prefer PostgreSQL-backed or in-memory MVP options.
+```
+
+Outbox tradeoff:
+
+```text
+Without outbox, DB save + queue publish is not atomic.
+A queue publish failure after DB save can lose dispatch.
+Accepted for this portfolio MVP; production systems use outbox/transactional messaging.
 ```
 
 ## Acceptance Checklist

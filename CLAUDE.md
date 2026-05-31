@@ -42,7 +42,8 @@ Already implemented:
 Next milestone:
 
 ```text
-Implement Platform.Worker background processing.
+Platform.Worker polling processing is complete.
+Next: queue-based dispatch, then Python AI integration, then retries, then rate limiting.
 ```
 
 ## Architecture Boundaries
@@ -66,15 +67,26 @@ Do not let Worker directly mutate status fields.
 Do not implement unless explicitly requested:
 
 - Redis
-- rate limiting
-- queues
 - outbox
-- retry policies
+- outbox relay
 - dead-letter queue
-- Python AI calls
 - auth
 - k6 tests
 - cloud deployment
+
+Roadmap constraints:
+
+- Queue-based dispatch is the next active implementation direction.
+- Python AI calls come after queue dispatch.
+- Retry policies come after AI integration.
+- Rate limiting remains in roadmap and comes later.
+- Rate limiting should not be Redis-backed unless explicitly redesigned.
+
+Outbox tradeoff note:
+
+- Without outbox, DB save + queue publish is not atomic.
+- Publish failure after DB save can lose dispatch.
+- Outbox/transactional messaging solves this in production but is intentionally out of active scope for this portfolio MVP.
 
 ## Development Style
 

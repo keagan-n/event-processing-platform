@@ -40,32 +40,34 @@ POST job -> persist in PostgreSQL -> worker processes pending jobs -> status upd
 
 ## Current Next Milestone
 
-Implement `Platform.Worker` processing.
+`Platform.Worker` polling processing is complete.
 
-The Worker should:
+Next active implementation order:
 
-1. Poll for pending jobs.
-2. Call a Jobs.Application service.
-3. Mark job `Processing`.
-4. Simulate work.
-5. Mark job `Completed`.
-6. Mark job `Failed` if processing throws.
+1. Queue-based job dispatch.
+2. Python AI service integration.
+3. Retries after AI integration.
+4. Rate limiting after queue + AI + retries.
 
 ## Scope Rules
 
 Do not add these unless explicitly requested:
 
 - Redis
-- rate limiting
-- Python AI service calls
-- queues
 - outbox relay
-- retries
+- outbox pattern
+- rate limiting
 - dead-letter queue
 - auth
 - distributed tracing
 - k6 tests
 - advanced multi-tenancy
+
+Roadmap note:
+
+- Queue-based dispatch and Python AI service integration are active planned milestones.
+- Retries come after AI integration.
+- Rate limiting remains in roadmap but comes later and should not be Redis-backed unless explicitly redesigned.
 
 ## Architecture Rules
 
@@ -79,6 +81,12 @@ Do not add these unless explicitly requested:
 - Worker should not mutate database rows directly.
 - Worker should call application services.
 - Application services should use repository abstractions.
+
+Queue/outbox tradeoff to keep explicit:
+
+- DB save + queue publish is simpler but non-atomic.
+- Publish failure after DB save can lose dispatch.
+- Outbox/transactional messaging solves this in production but is intentionally out of active scope for this portfolio MVP.
 
 ## Build and Run Commands
 

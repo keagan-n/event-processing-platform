@@ -46,11 +46,8 @@ Agents must not add these by default:
 
 ```text
 Redis
-rate limiting
-AI service calls
-queues
 outbox relay
-retries
+outbox pattern
 dead-letter queues
 auth
 cloud deployment
@@ -58,6 +55,22 @@ k6 tests
 advanced observability
 advanced multi-tenancy
 ```
+
+Roadmap order to follow by default:
+
+```text
+1) Queue-based dispatch
+2) Python AI service integration
+3) Retries after AI integration
+4) Rate limiting after queue + AI + retries
+```
+
+Notes:
+
+- Rate limiting remains in roadmap but is not active now.
+- Future rate limiting should not be Redis-backed unless explicitly redesigned.
+- Queue/outbox tradeoff must be documented when queue work is proposed:
+  DB save + queue publish is simpler but not atomic; a publish failure after save can lose dispatch.
 
 ## Build Command
 
