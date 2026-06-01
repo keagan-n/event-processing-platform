@@ -1,20 +1,20 @@
 # Event Processing Platform
 
-A simplified job-processing platform built with **C#/.NET**, **PostgreSQL**, and a **modular monolith** architecture.
+A simplified job-processing platform built with **C#/.NET**, **PostgreSQL**, **RabbitMQ (local infrastructure)**, and a **modular monolith** architecture.
 
 The goal is to build a small but realistic backend system that demonstrates core distributed-system concepts without adding unnecessary complexity too early.
 
 ## Local Development Commands
 
-Common commands for running PostgreSQL, API, and Worker locally (MVP-focused).
+Common commands for running PostgreSQL, RabbitMQ, API, and Worker locally (MVP-focused).
 
-1. Start PostgreSQL (Docker Compose):
+1. Start local infrastructure (PostgreSQL + RabbitMQ) with Docker Compose:
 
 ```bash
 docker compose up -d
 ```
 
-2. Confirm containers are running (expected container: `event-platform-postgres`):
+2. Confirm containers are running (expected containers: `event-platform-postgres`, `event-platform-rabbitmq`):
 
 ```bash
 docker ps
@@ -67,9 +67,25 @@ dotnet run --project src/Platform/Worker/Platform.Worker.csproj
 ```
 
 - Docker/PostgreSQL must be running before testing persistence.
+- RabbitMQ is now included as local queue infrastructure for the queue milestone, but API publishing and worker queue consumption are not wired yet.
 - The API reads the database connection string from `.env` via `DotNetEnv` in `Program.cs`.
 - Do not commit `.env` to source control; commit a `.env.example` as a safe template.
 - Worker processing is implemented and part of the MVP verification flow.
+
+RabbitMQ local verification:
+
+```bash
+docker compose up -d
+docker ps
+```
+
+RabbitMQ management UI:
+
+```text
+http://localhost:15672
+username: guest
+password: guest
+```
 
 ## Current MVP Status
 
@@ -108,7 +124,7 @@ In scope:
 
 Deferred until after the current MVP:
 
-- Queue-based job dispatch (next active implementation)
+- Queue-based job dispatch (next active implementation; RabbitMQ local infrastructure is in place, queue wiring is not implemented yet)
 - Python AI service integration (after queue dispatch)
 - Retries (after AI integration)
 - Rate limiting (after queue + AI + retries)

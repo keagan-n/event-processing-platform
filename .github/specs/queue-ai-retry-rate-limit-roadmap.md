@@ -21,6 +21,13 @@ PostgreSQL polling worker behavior is the current MVP, not the final queue-based
 4) Rate limiting after queue + AI + retries
 ```
 
+Queue milestone breakdown:
+
+```text
+Queue Milestone 1: Add local RabbitMQ infrastructure through Docker Compose.
+Queue Milestone 2 (next): Introduce queue contracts and publisher abstraction.
+```
+
 ## Target Next Architecture (Not Yet Implemented)
 
 ```text
@@ -37,6 +44,15 @@ Preferred local queue direction:
 ```text
 RabbitMQ through Docker Compose first.
 AWS SQS can be discussed later as a cloud-backed alternative.
+```
+
+Current queue implementation status:
+
+```text
+RabbitMQ local infrastructure exists.
+API queue publishing is not implemented yet.
+Worker queue consumption is not implemented yet.
+Worker still uses PostgreSQL polling in the current MVP.
 ```
 
 ## Scope Decisions

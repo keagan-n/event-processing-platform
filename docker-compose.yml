@@ -10,6 +10,18 @@ services:
       - "${POSTGRES_HOST_PORT}:5432"
     volumes:
       - event_platform_postgres_data:/var/lib/postgresql/data
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: event-platform-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
 
 volumes:
   event_platform_postgres_data:
+  rabbitmq_data:

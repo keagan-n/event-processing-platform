@@ -106,6 +106,8 @@ PostgreSQL persistence
 ### Local Development
 
 PostgreSQL runs through Docker Compose.
+RabbitMQ local infrastructure runs through Docker Compose.
+RabbitMQ is not wired into API queue publishing or Worker queue consumption yet.
 
 Database can be inspected with DBeaver.
 
@@ -142,6 +144,13 @@ Next active implementation order:
 2) Python AI service integration
 3) Retries after AI integration
 4) Rate limiting after queue + AI + retries
+```
+
+Queue milestone detail:
+
+```text
+Queue Milestone 1: Local RabbitMQ infrastructure only (implemented).
+Next queue milestone: queue contracts and publisher abstraction.
 ```
 
 Rate limiting constraint:
