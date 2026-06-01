@@ -90,6 +90,7 @@ JobStatusService
 IJobRepository
 IJobProcessingService
 JobProcessingService
+IJobQueuePublisher
 ```
 
 ### Infrastructure
@@ -101,6 +102,8 @@ JobsDbContext
 JobRepository
 EF Core migrations
 PostgreSQL persistence
+RabbitMqOptions
+RabbitMqJobQueuePublisher
 ```
 
 ### Local Development
@@ -108,6 +111,9 @@ PostgreSQL persistence
 PostgreSQL runs through Docker Compose.
 RabbitMQ local infrastructure runs through Docker Compose.
 RabbitMQ is not wired into API queue publishing or Worker queue consumption yet.
+`JobSubmittedMessage` contract exists.
+`IJobQueuePublisher` abstraction exists.
+RabbitMQ publisher implementation exists, but `POST /jobs` does not publish yet and Worker does not consume messages yet.
 
 Database can be inspected with DBeaver.
 
@@ -150,7 +156,8 @@ Queue milestone detail:
 
 ```text
 Queue Milestone 1: Local RabbitMQ infrastructure only (implemented).
-Next queue milestone: queue contracts and publisher abstraction.
+Queue Milestone 2: queue message contract, publisher abstraction, and RabbitMQ publisher capability (implemented).
+POST /jobs queue publishing and Worker queue consumption are not wired yet.
 ```
 
 Rate limiting constraint:

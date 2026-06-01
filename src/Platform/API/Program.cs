@@ -1,6 +1,7 @@
 using DotNetEnv;
 using Jobs.Application;
 using Jobs.Infrastructure.Persistence;
+using Jobs.Infrastructure.Queue;
 using Microsoft.EntityFrameworkCore;
 using Platform.Api.Contracts.Jobs;
 
@@ -30,6 +31,26 @@ builder.Services.AddScoped<IJobStatusService, JobStatusService>();
 
 // Register infrastructure services
 builder.Services.AddScoped<IJobRepository, JobRepository>();
+
+var rabbitMqPort = 5672;
+var rabbitMqPortRaw = Environment.GetEnvironmentVariable("RABBITMQ_PORT");
+if (!string.IsNullOrWhiteSpace(rabbitMqPortRaw) &&
+    int.TryParse(rabbitMqPortRaw, out var parsedPort))
+{
+    rabbitMqPort = parsedPort;
+}
+
+var rabbitMqOptions = new RabbitMqOptions
+{
+    Host = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+    Port = rabbitMqPort,
+    Username = Environment.GetEnvironmentVariable("RABBITMQ_USERNAME") ?? "guest",
+    Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+    QueueName = Environment.GetEnvironmentVariable("RABBITMQ_QUEUE_NAME") ?? "jobs.submitted"
+};
+
+builder.Services.AddSingleton(rabbitMqOptions);
+builder.Services.AddScoped<IJobQueuePublisher, RabbitMqJobQueuePublisher>();
 
 var app = builder.Build();
 

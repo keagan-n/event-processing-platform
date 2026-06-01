@@ -25,7 +25,8 @@ Queue milestone breakdown:
 
 ```text
 Queue Milestone 1: Add local RabbitMQ infrastructure through Docker Compose.
-Queue Milestone 2 (next): Introduce queue contracts and publisher abstraction.
+Queue Milestone 2: Queue message contract, publisher abstraction, and RabbitMQ publisher capability.
+Next queue milestone: wire POST /jobs to publish after persistence.
 ```
 
 ## Target Next Architecture (Not Yet Implemented)
@@ -50,7 +51,8 @@ Current queue implementation status:
 
 ```text
 RabbitMQ local infrastructure exists.
-API queue publishing is not implemented yet.
+Queue message contract, publisher abstraction, and RabbitMQ publisher implementation exist.
+API queue publishing from POST /jobs is not implemented yet.
 Worker queue consumption is not implemented yet.
 Worker still uses PostgreSQL polling in the current MVP.
 ```
