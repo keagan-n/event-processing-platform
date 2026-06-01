@@ -10,7 +10,7 @@ POST job -> persist in PostgreSQL -> worker processes job -> status updates -> G
 
 ## Milestone 1: Current Vertical Slice
 
-Status: mostly complete.
+Status: Complete.
 
 ### Already Done
 
@@ -24,11 +24,9 @@ Status: mostly complete.
 - Domain creates a valid Job
 - API returns `201 Created`
 
-### Current Limitation
-
-Jobs are not persisted yet.
-
 ## Milestone 2: Add PostgreSQL Persistence
+
+Status: Complete.
 
 ### Goal
 
@@ -55,6 +53,8 @@ Persist submitted jobs to PostgreSQL.
 
 ## Milestone 3: Add Job Status Endpoint
 
+Status: Complete.
+
 ### Goal
 
 Allow clients to query current job status.
@@ -75,6 +75,8 @@ Allow clients to query current job status.
 - Application uses repository abstraction.
 
 ## Milestone 4: Add Worker Processing
+
+Status: Complete.
 
 ### Goal
 
@@ -98,6 +100,8 @@ Process pending jobs in the background.
 - `GET /jobs/{jobId}/status` reflects updates.
 
 ## Milestone 5: Improve Domain Lifecycle
+
+Status: Complete.
 
 ### Goal
 
@@ -124,6 +128,8 @@ Make status transitions explicit and safe.
 
 ## Milestone 6: README Cleanup
 
+Status: Complete.
+
 ### Goal
 
 Document the MVP honestly and professionally.
@@ -144,18 +150,11 @@ Document the MVP honestly and professionally.
 - README does not claim unbuilt features.
 - README is useful for recruiters and interviewers.
 
-## Deferred Future Milestones
+## Next Milestones
 
-The following are intentionally deferred:
+See `.github/specs/queue-ai-retry-rate-limit-roadmap.md` for the active roadmap:
 
-- Redis rate limiting
-- Python AI service execution
-- Queue-based processing
-- Outbox relay
-- Retry policies
-- Dead-letter queue
-- Authentication
-- Authorization
-- k6 performance testing
-- Advanced observability
-- Multi-tenant quotas
+1. Queue-based job dispatch
+2. Python AI service integration
+3. Retries after AI integration
+4. Rate limiting (PostgreSQL-backed or in-memory)

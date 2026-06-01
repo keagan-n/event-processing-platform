@@ -76,7 +76,7 @@ Future Phases
 
 Future versions may add:
 
-Redis-based rate limiting
+Rate limiting (PostgreSQL-backed or in-memory; Redis not used unless explicitly redesigned).
 Python AI job execution
 Outbox table
 Queue-based worker processing

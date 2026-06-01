@@ -1,5 +1,5 @@
 ---
-description: "Use when writing C# code, designing .NET services, dependency injection setup, async patterns, or domain modeling. Covers DDD, Entity Framework patterns, and multi-tenant service architecture."
+description: "Use when writing C# code, designing .NET services, dependency injection setup, async patterns, or domain modeling. Covers DDD and Entity Framework patterns."
 applyTo: "**/*.cs"
 ---
 # C# / .NET Development
@@ -39,7 +39,7 @@ public class Event
 
 ## Async Patterns
 
-Use async for I/O-bound operations (database, external calls). Rate-limited operations and AI calls **must** be async:
+Use async for I/O-bound operations (database, external calls):
 
 ```csharp
 // ✓ Correct: async handler for event processing
@@ -47,15 +47,7 @@ public class ProcessEventHandler : IEventHandler<DomainEvent>
 {
     public async Task HandleAsync(DomainEvent @event, CancellationToken ct)
     {
-        // 1. Check rate limit early
-        var quotaOk = await _rateLimiter.CheckQuotaAsync(@event.TenantId, "process_event", ct);
-        if (!quotaOk)
-            throw new QuotaExceededException(@event.TenantId);
-
-        // 2. Process event (possibly AI-enriched)
         var result = await _processor.ProcessAsync(@event, ct);
-
-        // 3. Persist outcome
         await _repository.SaveAsync(result, ct);
     }
 }
@@ -63,8 +55,7 @@ public class ProcessEventHandler : IEventHandler<DomainEvent>
 // ✗ Avoid: blocking calls or missing tenant context
 public void Handle(DomainEvent @event)
 {
-    _rateLimiter.CheckQuota(@event.Id); // Wrong identifier, sync call
-    _processor.Process(@event);         // Blocks thread
+    _processor.Process(@event); // Blocks thread
 }
 ```
 
@@ -81,46 +72,12 @@ public static IServiceCollection AddApplicationServices(this IServiceCollection 
 
     // Application services (use cases)
     services.AddScoped<ProcessEventUseCase>();
-    services.AddScoped<CheckQuotaUseCase>();
 
     // Infrastructure (EF, external APIs)
     services.AddScoped<IEventRepository, EfEventRepository>();
-    services.AddScoped<IRateLimiter, RedisRateLimiter>();
-    services.AddScoped<IAiClient, OpenAiClient>();
 
     return services;
 }
-```
-
-## EF Core & Multi-Tenancy
-
-Query filtering: Configure global filters for tenant isolation:
-
-```csharp
-// DbContext configuration
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    // Global filter: every query against Event automatically adds WHERE TenantId = ?
-    modelBuilder.Entity<Event>()
-        .HasQueryFilter(e => e.TenantId == _tenantProvider.CurrentTenantId);
-
-    // Composite key for events (TenantId + EventId)
-    modelBuilder.Entity<Event>()
-        .HasKey(e => new { e.TenantId, e.EventId });
-
-    // Index for common queries
-    modelBuilder.Entity<Event>()
-        .HasIndex(e => new { e.TenantId, e.OccurredAt });
-}
-```
-
-Migrations: Always test rollback locally before pushing:
-
-```bash
-dotnet ef migrations add AddEventTable
-dotnet ef database update         # Apply forward
-dotnet ef database update 0       # Rollback to start (test)
-dotnet ef database update -1      # Re-apply to latest
 ```
 
 ## Error Handling
@@ -173,7 +130,7 @@ public async Task ProcessEvent_ExceedsQuota_ThrowsAsync()
 }
 ```
 
-Integration tests: Spin up PostgreSQL and Redis in Docker, use test fixtures:
+Integration tests: Spin up PostgreSQL in Docker and use test fixtures:
 
 ```csharp
 [Category("Integration")]
@@ -181,9 +138,9 @@ public async Task EventPersistence_SavesWithTenantIsolationAsync()
 {
     var context = new TestDbContext(_options);
     var repo = new EfEventRepository(context);
-    
+
     await repo.SaveAsync(_event);
-    
+
     // Query as different tenant—should return nothing
     var fetched = await repo.GetByIdAsync(_event.EventId, "other-tenant");
     Assert.IsNull(fetched);
@@ -201,5 +158,4 @@ public async Task EventPersistence_SavesWithTenantIsolationAsync()
 
 - **Batch operations**: Use bulk insert/update for high-volume event ingestion
 - **Indexes**: Always index on (TenantId, OccurredAt) and (TenantId, where entity-specific filters)
-- **Caching**: Cache tenant quotas in Redis per second; invalidate on quota update
 - **Connection pooling**: EF Core handles this by default; verify pool size for concurrency

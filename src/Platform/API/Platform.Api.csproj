@@ -16,14 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Modules\Tenants\Tenants.Application\Tenants.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\Tenants\Tenants.Infrastructure\Tenants.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\Modules\AI\AI.Application\AI.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\AI\AI.Infrastructure\AI.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Jobs\Jobs.Application\Jobs.Application.csproj" />
     <ProjectReference Include="..\..\Modules\Jobs\Jobs.Infrastructure\Jobs.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\Modules\RateLimiting\RateLimiting.Application\RateLimiting.Application.csproj" />
-    <ProjectReference Include="..\..\Modules\RateLimiting\RateLimiting.Infrastructure\RateLimiting.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Common\Application\Common.Application.csproj" />
     <ProjectReference Include="..\..\Common\Domain\Common.Domain.csproj" />
     <ProjectReference Include="..\..\Common\Infrastructure\Common.Infrastructure.csproj" />
