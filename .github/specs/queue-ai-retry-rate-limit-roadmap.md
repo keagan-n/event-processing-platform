@@ -24,9 +24,10 @@ PostgreSQL polling worker behavior is the current MVP, not the final queue-based
 Queue milestone breakdown:
 
 ```text
-Queue Milestone 1: Add local RabbitMQ infrastructure through Docker Compose.
-Queue Milestone 2: Queue message contract, publisher abstraction, and RabbitMQ publisher capability.
-Next queue milestone: wire POST /jobs to publish after persistence.
+Queue Milestone 1: Add local RabbitMQ infrastructure through Docker Compose (implemented).
+Queue Milestone 2: Queue message contract, publisher abstraction, and RabbitMQ publisher capability (implemented).
+Queue Milestone 3: POST /jobs publishes JobSubmittedMessage to RabbitMQ after persistence succeeds (implemented).
+Next queue milestone: Worker consumes RabbitMQ messages instead of PostgreSQL polling.
 ```
 
 ## Target Next Architecture (Not Yet Implemented)
@@ -52,7 +53,7 @@ Current queue implementation status:
 ```text
 RabbitMQ local infrastructure exists.
 Queue message contract, publisher abstraction, and RabbitMQ publisher implementation exist.
-API queue publishing from POST /jobs is not implemented yet.
+POST /jobs publishes JobSubmittedMessage to RabbitMQ after PostgreSQL persistence succeeds.
 Worker queue consumption is not implemented yet.
 Worker still uses PostgreSQL polling in the current MVP.
 ```

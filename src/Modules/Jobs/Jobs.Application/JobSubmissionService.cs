@@ -1,3 +1,4 @@
+using Jobs.Contracts;
 using Jobs.Domain;
 
 namespace Jobs.Application;
@@ -5,10 +6,14 @@ namespace Jobs.Application;
 public sealed class JobSubmissionService : IJobSubmissionService
 {
     private readonly IJobRepository _jobRepository;
+    private readonly IJobQueuePublisher _jobQueuePublisher;
 
-    public JobSubmissionService(IJobRepository jobRepository)
+    public JobSubmissionService(
+        IJobRepository jobRepository,
+        IJobQueuePublisher jobQueuePublisher)
     {
         _jobRepository = jobRepository;
+        _jobQueuePublisher = jobQueuePublisher;
     }
 
     public async Task<SubmitJobResult> SubmitAsync(
@@ -33,6 +38,10 @@ public sealed class JobSubmissionService : IJobSubmissionService
 
         await _jobRepository.AddAsync(job, cancellationToken);
         await _jobRepository.SaveChangesAsync(cancellationToken);
+
+        await _jobQueuePublisher.PublishJobSubmittedAsync(
+            new JobSubmittedMessage(job.Id),
+            cancellationToken);
 
         return SubmitJobResult.Success(
             jobId: job.Id,

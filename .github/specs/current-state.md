@@ -24,7 +24,7 @@ POST /jobs
 GET /jobs/{jobId}/status
 ```
 
-`POST /jobs` persists jobs to PostgreSQL.
+`POST /jobs` persists jobs to PostgreSQL and publishes `JobSubmittedMessage` to RabbitMQ after persistence succeeds.
 `POST /jobs` validates required fields (`TenantId`, `JobType`, `Payload`).
 Invalid submit requests return `400 Bad Request`.
 Valid submit requests return `201 Created`.
@@ -110,10 +110,11 @@ RabbitMqJobQueuePublisher
 
 PostgreSQL runs through Docker Compose.
 RabbitMQ local infrastructure runs through Docker Compose.
-RabbitMQ is not wired into API queue publishing or Worker queue consumption yet.
 `JobSubmittedMessage` contract exists.
 `IJobQueuePublisher` abstraction exists.
-RabbitMQ publisher implementation exists, but `POST /jobs` does not publish yet and Worker does not consume messages yet.
+RabbitMQ publisher implementation exists.
+`POST /jobs` publishes `JobSubmittedMessage` to RabbitMQ after PostgreSQL persistence succeeds.
+Worker does not consume RabbitMQ messages yet and still uses PostgreSQL polling.
 
 Database can be inspected with DBeaver.
 
@@ -157,7 +158,8 @@ Queue milestone detail:
 ```text
 Queue Milestone 1: Local RabbitMQ infrastructure only (implemented).
 Queue Milestone 2: queue message contract, publisher abstraction, and RabbitMQ publisher capability (implemented).
-POST /jobs queue publishing and Worker queue consumption are not wired yet.
+Queue Milestone 3: POST /jobs publishes JobSubmittedMessage to RabbitMQ after persistence succeeds (implemented).
+Worker queue consumption is not wired yet. Worker still uses PostgreSQL polling.
 ```
 
 Rate limiting constraint:
