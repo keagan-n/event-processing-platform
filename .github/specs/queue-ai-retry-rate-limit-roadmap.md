@@ -1,21 +1,22 @@
 # Queue, AI, Retry, Rate-Limit Roadmap
 
-## Current Working MVP (Implemented)
+## Current Working State (Implemented)
 
 ```text
 POST /jobs persists valid jobs in PostgreSQL.
+POST /jobs publishes JobSubmittedMessage to RabbitMQ after persistence succeeds.
+Platform.Worker consumes JobSubmittedMessage from RabbitMQ.
+Worker loads job by ID from PostgreSQL and processes through Jobs.Application.
 GET /jobs/{jobId}/status reads persisted status.
-Platform.Worker processes jobs using PostgreSQL polling.
 Normal jobs: Pending -> Processing -> Completed.
 Forced-failure jobs: Pending -> Processing -> Failed.
+PostgreSQL is the system of record for all job state.
 ```
-
-PostgreSQL polling worker behavior is the current MVP, not the final queue-based direction.
 
 ## Active Implementation Order
 
 ```text
-1) Queue-based job dispatch
+1) Queue-based job dispatch (implemented)
 2) Python AI service integration
 3) Retries after AI integration
 4) Rate limiting after queue + AI + retries
@@ -27,16 +28,16 @@ Queue milestone breakdown:
 Queue Milestone 1: Add local RabbitMQ infrastructure through Docker Compose (implemented).
 Queue Milestone 2: Queue message contract, publisher abstraction, and RabbitMQ publisher capability (implemented).
 Queue Milestone 3: POST /jobs publishes JobSubmittedMessage to RabbitMQ after persistence succeeds (implemented).
-Next queue milestone: Worker consumes RabbitMQ messages instead of PostgreSQL polling.
+Queue Milestone 4: Worker consumes RabbitMQ messages instead of PostgreSQL polling (implemented).
 ```
 
-## Target Next Architecture (Not Yet Implemented)
+## Current Architecture
 
 ```text
 API persists job in PostgreSQL
 API publishes queue message containing jobId
-Worker consumes queue messages
-Worker loads job by jobId
+Worker consumes queue messages from RabbitMQ
+Worker loads job by jobId from PostgreSQL
 Worker processes job through Jobs.Application
 Python AI service eventually replaces simulated delay
 ```
@@ -46,16 +47,6 @@ Preferred local queue direction:
 ```text
 RabbitMQ through Docker Compose first.
 AWS SQS can be discussed later as a cloud-backed alternative.
-```
-
-Current queue implementation status:
-
-```text
-RabbitMQ local infrastructure exists.
-Queue message contract, publisher abstraction, and RabbitMQ publisher implementation exist.
-POST /jobs publishes JobSubmittedMessage to RabbitMQ after PostgreSQL persistence succeeds.
-Worker queue consumption is not implemented yet.
-Worker still uses PostgreSQL polling in the current MVP.
 ```
 
 ## Scope Decisions

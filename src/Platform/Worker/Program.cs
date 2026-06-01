@@ -1,6 +1,7 @@
 using DotNetEnv;
 using Jobs.Application;
 using Jobs.Infrastructure.Persistence;
+using Jobs.Infrastructure.Queue;
 using Microsoft.EntityFrameworkCore;
 using Platform.Worker;
 
@@ -21,9 +22,19 @@ builder.Services.AddDbContext<JobsDbContext>(options =>
     options.UseNpgsql(connectionString);
 });
 
+var rabbitMqOptions = new RabbitMqOptions
+{
+    Host = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+    Port = int.TryParse(Environment.GetEnvironmentVariable("RABBITMQ_PORT"), out var port) ? port : 5672,
+    Username = Environment.GetEnvironmentVariable("RABBITMQ_USERNAME") ?? "guest",
+    Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+    QueueName = Environment.GetEnvironmentVariable("RABBITMQ_QUEUE_NAME") ?? "jobs.submitted"
+};
+
+builder.Services.AddSingleton(rabbitMqOptions);
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IJobProcessingService, JobProcessingService>();
-builder.Services.AddHostedService<JobProcessingBackgroundService>();
+builder.Services.AddHostedService<JobSubmittedMessageConsumerService>();
 
 var host = builder.Build();
 host.Run();

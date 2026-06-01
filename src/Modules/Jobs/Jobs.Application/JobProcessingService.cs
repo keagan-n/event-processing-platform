@@ -1,6 +1,7 @@
 namespace Jobs.Application;
 
 using System.Text.Json;
+using Jobs.Domain;
 
 public sealed class JobProcessingService : IJobProcessingService
 {
@@ -11,23 +12,25 @@ public sealed class JobProcessingService : IJobProcessingService
         _jobRepository = jobRepository;
     }
 
-    public async Task<bool> ProcessNextPendingJobAsync(CancellationToken cancellationToken)
+    public async Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        var job = await _jobRepository.GetNextPendingAsync(cancellationToken);
+        var job = await _jobRepository.GetByIdAsync(jobId, cancellationToken);
 
         if (job is null)
         {
-            return false;
+            throw new InvalidOperationException($"Job {jobId} was not found.");
         }
 
-        var markedProcessing = false;
+        if (job.Status != JobStatus.Pending)
+        {
+            return;
+        }
+
+        job.MarkProcessing();
+        await _jobRepository.SaveChangesAsync(cancellationToken);
 
         try
         {
-            job.MarkProcessing();
-            markedProcessing = true;
-            await _jobRepository.SaveChangesAsync(cancellationToken);
-
             if (ShouldForceFailure(job.Payload))
             {
                 throw new InvalidOperationException("Forced failure requested via payload.");
@@ -37,17 +40,11 @@ public sealed class JobProcessingService : IJobProcessingService
 
             job.MarkCompleted();
             await _jobRepository.SaveChangesAsync(cancellationToken);
-
-            return true;
         }
         catch (Exception exception)
         {
-            if (markedProcessing)
-            {
-                job.MarkFailed(exception.Message);
-                await _jobRepository.SaveChangesAsync(cancellationToken);
-            }
-
+            job.MarkFailed(exception.Message);
+            await _jobRepository.SaveChangesAsync(cancellationToken);
             throw;
         }
     }

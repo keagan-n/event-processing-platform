@@ -10,11 +10,13 @@
   <ItemGroup>
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
+    <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Modules\Jobs\Jobs.Application\Jobs.Application.csproj" />
     <ProjectReference Include="..\..\Modules\Jobs\Jobs.Infrastructure\Jobs.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Jobs\Jobs.Contracts\Jobs.Contracts.csproj" />
     <ProjectReference Include="..\..\Common\Application\Common.Application.csproj" />
     <ProjectReference Include="..\..\Common\Domain\Common.Domain.csproj" />
     <ProjectReference Include="..\..\Common\Infrastructure\Common.Infrastructure.csproj" />

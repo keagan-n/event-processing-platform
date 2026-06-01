@@ -8,9 +8,11 @@ The current working flow is:
 
 ```text
 Client -> Platform.API -> Jobs.Application -> Jobs.Domain -> Jobs.Infrastructure -> PostgreSQL
+API publishes JobSubmittedMessage to RabbitMQ after persistence succeeds.
+Platform.Worker consumes JobSubmittedMessage from RabbitMQ and processes jobs through Jobs.Application.
 ```
 
-Current worker behavior is PostgreSQL polling. This is the working MVP behavior, not the final queue-based direction.
+PostgreSQL is the system of record for all job state.
 
 ## Implemented
 
@@ -93,6 +95,8 @@ JobProcessingService
 IJobQueuePublisher
 ```
 
+`IJobProcessingService.ProcessJobAsync(Guid jobId, CancellationToken)` loads a job by ID, skips non-Pending jobs, and processes Pending jobs through the domain lifecycle.
+
 ### Infrastructure
 
 Implemented:
@@ -106,6 +110,13 @@ RabbitMqOptions
 RabbitMqJobQueuePublisher
 ```
 
+### Worker
+
+`Platform.Worker` consumes `JobSubmittedMessage` from RabbitMQ using `JobSubmittedMessageConsumerService`.
+For each message, the worker resolves `IJobProcessingService` in a DI scope and calls `ProcessJobAsync`.
+Messages are acked after successful processing and nacked without requeue on failure.
+PostgreSQL polling worker has been removed.
+
 ### Local Development
 
 PostgreSQL runs through Docker Compose.
@@ -114,7 +125,7 @@ RabbitMQ local infrastructure runs through Docker Compose.
 `IJobQueuePublisher` abstraction exists.
 RabbitMQ publisher implementation exists.
 `POST /jobs` publishes `JobSubmittedMessage` to RabbitMQ after PostgreSQL persistence succeeds.
-Worker does not consume RabbitMQ messages yet and still uses PostgreSQL polling.
+Worker consumes `JobSubmittedMessage` from RabbitMQ and processes jobs.
 
 Database can be inspected with DBeaver.
 
@@ -123,7 +134,6 @@ Secrets are loaded from `.env` using DotNetEnv.
 ## Not Implemented
 
 ```text
-Queue-based dispatch
 AI calls
 retries
 rate limiting
@@ -142,24 +152,14 @@ outbox pattern
 
 ## Next Milestone
 
-Worker processing is complete and verified (polling MVP).
+Queue-based dispatch is fully implemented (Milestones 1-4 complete).
 
 Next active implementation order:
 
 ```text
-1) Queue-based job dispatch
-2) Python AI service integration
-3) Retries after AI integration
-4) Rate limiting after queue + AI + retries
-```
-
-Queue milestone detail:
-
-```text
-Queue Milestone 1: Local RabbitMQ infrastructure only (implemented).
-Queue Milestone 2: queue message contract, publisher abstraction, and RabbitMQ publisher capability (implemented).
-Queue Milestone 3: POST /jobs publishes JobSubmittedMessage to RabbitMQ after persistence succeeds (implemented).
-Worker queue consumption is not wired yet. Worker still uses PostgreSQL polling.
+1) Python AI service integration
+2) Retries after AI integration
+3) Rate limiting after queue + AI + retries
 ```
 
 Rate limiting constraint:
@@ -183,7 +183,6 @@ Forced failure verification exists via payload marker:
 ```
 
 `Platform.Worker` delegates processing to `Jobs.Application` through `IJobProcessingService`.
-Worker lifecycle behavior is unchanged by submit validation hardening.
 
 Outbox tradeoff note:
 
