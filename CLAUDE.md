@@ -17,33 +17,36 @@ This repo is a simplified event/job-processing platform using:
 The current MVP flow is:
 
 ```text
-POST /jobs -> save job to PostgreSQL -> worker processes pending jobs -> GET job status
+POST /jobs -> persist in PostgreSQL -> publish JobSubmittedMessage to RabbitMQ
+Worker consumes RabbitMQ -> loads job by jobId -> processes through Jobs.Application -> GET job status
 ```
 
+PostgreSQL is the system of record. RabbitMQ is the active queue. Worker does not poll PostgreSQL.
+
 ## Current State
+
+See `.github/specs/current-state.md` for full implemented behavior.
+See `.github/specs/queue-ai-retry-rate-limit-roadmap.md` for active roadmap.
+See `.claude/context/README.md` for Claude Code working memory.
 
 Already implemented:
 
 - `GET /health`
-- `POST /jobs`
+- `POST /jobs` (validates, persists, publishes to RabbitMQ)
 - `GET /jobs/{jobId}/status`
-- PostgreSQL persistence
-- EF Core migrations
-- `JobsDbContext`
-- `JobRepository`
-- `IJobRepository`
-- string `TenantId`
-- Guid `JobId`
-- domain lifecycle methods:
-  - `MarkProcessing`
-  - `MarkCompleted`
-  - `MarkFailed`
+- PostgreSQL persistence via EF Core
+- RabbitMQ queue publishing (`IJobQueuePublisher`, `RabbitMqJobQueuePublisher`)
+- `JobSubmittedMessage` contract
+- Worker consumes RabbitMQ messages (`JobSubmittedMessageConsumerService`)
+- Worker processes jobs through `IJobProcessingService`
+- Job lifecycle: `Pending -> Processing -> Completed` or `Pending -> Processing -> Failed`
+- `forceFailure` payload triggers failure path
 
 Next milestone:
 
 ```text
-Platform.Worker polling processing is complete.
-Next: queue-based dispatch, then Python AI integration, then retries, then rate limiting.
+Queue-based dispatch is complete.
+Next: Python AI service integration, then retries, then rate limiting.
 ```
 
 ## Architecture Boundaries
@@ -76,11 +79,12 @@ Do not implement unless explicitly requested:
 
 Roadmap constraints:
 
-- Queue-based dispatch is the next active implementation direction.
-- Python AI calls come after queue dispatch.
+- Queue-based dispatch is complete.
+- Python AI service integration is next.
 - Retry policies come after AI integration.
 - Rate limiting remains in roadmap and comes later.
 - Rate limiting should not be Redis-backed unless explicitly redesigned.
+- Future AI calls go through Python `ai-service`, not direct OpenAI SDK from .NET.
 
 Outbox tradeoff note:
 
@@ -110,12 +114,26 @@ Before modifying files:
 4. Explain why.
 5. Wait if the requested change is ambiguous.
 
+## Agent Rules
+
+- Do not commit or push unless explicitly told.
+- Inspect relevant files before editing.
+- Show `git diff --stat` and `git diff` before any commit.
+- Run `dotnet build src/Platform.sln` after code changes.
+- Use conventional commit messages: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`.
+- Do not delete or rename files without explicit approval.
+- If `.claude/context/` conflicts with `.github/specs/`, `.github/specs/` wins.
+
+See `.claude/context/README.md` for Claude Code working memory layout.
+See `.github/specs/index.md` for documentation map.
+
 ## Common Commands
 
 ```bash
 docker compose up -d
 dotnet build src/Platform.sln
 dotnet run --project src/Platform/API/Platform.Api.csproj
+dotnet run --project src/Platform/Worker/Platform.Worker.csproj
 ```
 
 ## Migration Commands

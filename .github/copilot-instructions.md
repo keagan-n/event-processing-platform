@@ -209,4 +209,11 @@ Queue/outbox tradeoff note to keep explicit in design docs:
 ## References
 
 - **Instruction files**: See `.github/instructions/dotnet.instructions.md` for C#/.NET patterns
-- **Project**: Modular monolith with PostgreSQL; extensible for future modules beyond Jobs
+- **Agent safety**: See `.github/instructions/agent-safety.instructions.md` for cross-agent safety rules
+- **Documentation rules**: See `.github/instructions/docs.instructions.md` for spec editing rules
+- **Specs index**: See `.github/specs/index.md` for documentation map
+- **Current state**: See `.github/specs/current-state.md` for implemented behavior (source of truth)
+- **Roadmap**: See `.github/specs/queue-ai-retry-rate-limit-roadmap.md` for active implementation order
+- **Agent model**: See `.github/specs/agent-operating-model.md` for agent operating rules
+- **Verification**: See `.github/specs/manual-verification.md` for local verification checklist
+- **Project**: Modular monolith with PostgreSQL + RabbitMQ; extensible for future modules beyond Jobs

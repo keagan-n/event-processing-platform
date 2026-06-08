@@ -18,6 +18,7 @@ POST job -> persist in PostgreSQL -> worker processes pending jobs -> status upd
 
 - C#/.NET
 - PostgreSQL through Docker Compose
+- RabbitMQ through Docker Compose
 - EF Core
 - Npgsql
 - DotNetEnv for local .env loading
@@ -27,10 +28,12 @@ POST job -> persist in PostgreSQL -> worker processes pending jobs -> status upd
 ## Current Working Features
 
 - `GET /health`
-- `POST /jobs`
+- `POST /jobs` (validates, persists, publishes `JobSubmittedMessage` to RabbitMQ)
 - `GET /jobs/{jobId}/status`
-- PostgreSQL persistence
-- EF Core migrations
+- PostgreSQL persistence via EF Core
+- RabbitMQ queue publishing (`RabbitMqJobQueuePublisher`)
+- Worker consumes RabbitMQ messages (`JobSubmittedMessageConsumerService`)
+- Worker processes jobs through `IJobProcessingService`
 - string `TenantId`
 - Guid `JobId`
 - `Job` domain lifecycle methods:
@@ -40,14 +43,13 @@ POST job -> persist in PostgreSQL -> worker processes pending jobs -> status upd
 
 ## Current Next Milestone
 
-`Platform.Worker` polling processing is complete.
+Queue-based dispatch is complete. Worker consumes RabbitMQ messages via `JobSubmittedMessageConsumerService`. Worker does not poll PostgreSQL.
 
 Next active implementation order:
 
-1. Queue-based job dispatch.
-2. Python AI service integration.
-3. Retries after AI integration.
-4. Rate limiting after queue + AI + retries.
+1. Python AI service integration.
+2. Retries after AI integration.
+3. Rate limiting after queue + AI + retries.
 
 ## Scope Rules
 
@@ -170,3 +172,19 @@ After editing:
 2. Explain why.
 3. Provide build command.
 4. Provide test steps.
+
+## Cross-Agent Rules
+
+- Do not commit or push unless explicitly requested.
+- Show `git diff --stat` and `git diff` before any commit.
+- Use semantic commit messages: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`.
+- No Redis unless explicitly redesigned.
+- No OutboxRelay or outbox pattern.
+- RabbitMQ is the active queue. Worker consumes RabbitMQ and must not poll PostgreSQL.
+- Python AI service is the next integration target. No direct OpenAI SDK calls from .NET.
+- Do not delete or rename files without explicit approval.
+- No broad cleanup without grep/reference checks.
+- If runtime behavior changes, update `.github/specs/current-state.md`.
+
+See `.github/specs/index.md` for documentation map.
+See `.github/specs/agent-operating-model.md` for full agent operating rules.

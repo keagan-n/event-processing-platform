@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build *)",
+      "Bash(dotnet run *)",
+      "Bash(dotnet ef *)",
+      "Bash(docker compose *)",
+      "Bash(docker ps *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(curl http://localhost*)",
+      "Bash(ls *)",
+      "Bash(cat *)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PreCommit": [
+      {
+        "command": ".claude/hooks/pre-commit-no-secrets.sh",
+        "description": "Block commits containing .env or secrets files"
+      },
+      {
+        "command": ".claude/hooks/pre-commit-build.sh",
+        "description": "Verify dotnet build passes before commit"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "command": ".claude/hooks/post-edit-build.sh",
+        "description": "Run dotnet build after C# file edits",
+        "toolNames": ["Edit", "Write"]
+      }
+    ]
+  }
+}
