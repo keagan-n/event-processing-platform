@@ -19,6 +19,43 @@ public sealed class RabbitMqJobQueuePublisher : IJobQueuePublisher
         JobSubmittedMessage message,
         CancellationToken cancellationToken)
     {
+        Publish(message, _options.QueueName, headers: null, cancellationToken);
+
+        return Task.CompletedTask;
+    }
+
+    public Task PublishJobRetryAsync(
+        JobSubmittedMessage message,
+        CancellationToken cancellationToken)
+    {
+        // Attempt state lives on the job row (PostgreSQL is the system of
+        // record), so a retry is a plain republish of the same message.
+        Publish(message, _options.QueueName, headers: null, cancellationToken);
+
+        return Task.CompletedTask;
+    }
+
+    public Task PublishJobFailedAsync(
+        JobSubmittedMessage message,
+        string failureReason,
+        CancellationToken cancellationToken)
+    {
+        var headers = new Dictionary<string, object>
+        {
+            ["x-failure-reason"] = failureReason
+        };
+
+        Publish(message, _options.DeadLetterQueueName, headers, cancellationToken);
+
+        return Task.CompletedTask;
+    }
+
+    private void Publish(
+        JobSubmittedMessage message,
+        string queueName,
+        IDictionary<string, object>? headers,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var factory = new ConnectionFactory
@@ -33,7 +70,7 @@ public sealed class RabbitMqJobQueuePublisher : IJobQueuePublisher
         using var channel = connection.CreateModel();
 
         channel.QueueDeclare(
-            queue: _options.QueueName,
+            queue: queueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -45,12 +82,15 @@ public sealed class RabbitMqJobQueuePublisher : IJobQueuePublisher
         var properties = channel.CreateBasicProperties();
         properties.Persistent = true;
 
+        if (headers is not null)
+        {
+            properties.Headers = headers;
+        }
+
         channel.BasicPublish(
             exchange: string.Empty,
-            routingKey: _options.QueueName,
+            routingKey: queueName,
             basicProperties: properties,
             body: body);
-
-        return Task.CompletedTask;
     }
 }

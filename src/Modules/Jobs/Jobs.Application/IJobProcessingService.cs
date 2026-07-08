@@ -2,5 +2,5 @@ namespace Jobs.Application;
 
 public interface IJobProcessingService
 {
-    Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken);
+    Task<JobProcessingResult> ProcessJobAsync(Guid jobId, CancellationToken cancellationToken);
 }

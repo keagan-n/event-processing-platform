@@ -7,4 +7,6 @@ public sealed class RabbitMqOptions
     public string Username { get; init; } = "guest";
     public string Password { get; init; } = "guest";
     public string QueueName { get; init; } = "jobs.submitted";
+    public string DeadLetterQueueName { get; init; } = "jobs.submitted.dlq";
+    public ushort PrefetchCount { get; init; } = 4;
 }

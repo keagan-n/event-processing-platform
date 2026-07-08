@@ -11,6 +11,7 @@ public sealed class JobsDbContext : DbContext
     }
 
     public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +68,47 @@ public sealed class JobsDbContext : DbContext
 
             entity.Property(job => job.FailureReason)
                 .HasColumnName("failure_reason");
+
+            entity.Property(job => job.Result)
+                .HasColumnName("result");
+
+            entity.Property(job => job.AttemptCount)
+                .HasColumnName("attempt_count")
+                .HasDefaultValue(0)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("outbox_messages");
+
+            entity.HasKey(message => message.Id);
+
+            entity.Property(message => message.Id)
+                .HasColumnName("id")
+                .IsRequired();
+
+            entity.Property(message => message.OccurredUtc)
+                .HasColumnName("occurred_utc")
+                .IsRequired();
+
+            entity.Property(message => message.Type)
+                .HasColumnName("type")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity.Property(message => message.Payload)
+                .HasColumnName("payload")
+                .IsRequired();
+
+            entity.Property(message => message.ProcessedUtc)
+                .HasColumnName("processed_utc");
+
+            entity.Property(message => message.Error)
+                .HasColumnName("error");
+
+            entity.HasIndex(message => message.ProcessedUtc)
+                .HasDatabaseName("ix_outbox_messages_processed_utc");
         });
     }
 }

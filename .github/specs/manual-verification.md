@@ -93,3 +93,27 @@ Or use DBeaver to inspect the `Jobs` table.
 dotnet build src/Platform.sln
 # Expected: Build succeeded, 0 errors.
 ```
+
+## Final-Scope Verification (verified 2026-07-06)
+
+Prereq: `docker compose up -d postgres rabbitmq ai-service`, migrations applied, API + Worker running (or full `docker compose up --build`).
+
+1. Happy path with AI result:
+   - POST /jobs with a normal payload -> 201 Pending.
+   - Within ~5s, GET status -> `Completed` with a non-null `result` (stub summary) and `attemptCount: 0`.
+
+2. Retry then dead-letter:
+   - POST /jobs with payload `{"forceFailure": true}` -> 201.
+   - Within ~10s, GET status -> `Failed`, `attemptCount: 2` (3 attempts total).
+   - RabbitMQ management UI (localhost:15672, guest/guest) -> Queues -> `jobs.submitted.dlq` has 1 message with an `x-failure-reason` header.
+
+3. Per-tenant rate limit:
+   - 12 rapid POSTs for one tenant -> first 10 return 201, then 429 with `Retry-After: 60` and JSON body naming the tenant.
+   - A POST for a different tenant during the same window -> 201.
+
+4. Outbox survives a broker outage:
+   - `docker stop event-platform-rabbitmq`, POST /jobs -> 201 (job + outbox row committed).
+   - `docker start event-platform-rabbitmq` -> within ~25s the dispatcher publishes and GET status -> `Completed`.
+
+5. AI service outage retry (optional):
+   - `docker stop event-platform-ai-service`, POST /jobs -> retries with backoff, then `Failed` + DLQ if the outage persists; restart the service and submit again -> `Completed`.

@@ -29,6 +29,12 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int>("AttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempt_count");
+
                     b.Property<DateTime?>("CompletedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_utc");
@@ -56,6 +62,10 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("payload");
 
+                    b.Property<string>("Result")
+                        .HasColumnType("text")
+                        .HasColumnName("result");
+
                     b.Property<DateTime?>("StartedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_utc");
@@ -81,6 +91,44 @@ namespace Jobs.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_jobs_status");
 
                     b.ToTable("jobs", (string)null);
+                });
+
+            modelBuilder.Entity("Jobs.Infrastructure.Persistence.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text")
+                        .HasColumnName("error");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_utc");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTime?>("ProcessedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_utc");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProcessedUtc")
+                        .HasDatabaseName("ix_outbox_messages_processed_utc");
+
+                    b.ToTable("outbox_messages", (string)null);
                 });
 #pragma warning restore 612, 618
         }

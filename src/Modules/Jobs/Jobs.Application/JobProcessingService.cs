@@ -2,17 +2,28 @@ namespace Jobs.Application;
 
 using System.Text.Json;
 using Jobs.Domain;
+using Microsoft.Extensions.Logging;
 
 public sealed class JobProcessingService : IJobProcessingService
 {
     private readonly IJobRepository _jobRepository;
+    private readonly IAiAnalysisClient _aiAnalysisClient;
+    private readonly JobProcessingOptions _options;
+    private readonly ILogger<JobProcessingService> _logger;
 
-    public JobProcessingService(IJobRepository jobRepository)
+    public JobProcessingService(
+        IJobRepository jobRepository,
+        IAiAnalysisClient aiAnalysisClient,
+        JobProcessingOptions options,
+        ILogger<JobProcessingService> logger)
     {
         _jobRepository = jobRepository;
+        _aiAnalysisClient = aiAnalysisClient;
+        _options = options;
+        _logger = logger;
     }
 
-    public async Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken)
+    public async Task<JobProcessingResult> ProcessJobAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var job = await _jobRepository.GetByIdAsync(jobId, cancellationToken);
 
@@ -21,9 +32,12 @@ public sealed class JobProcessingService : IJobProcessingService
             throw new InvalidOperationException($"Job {jobId} was not found.");
         }
 
+        // Idempotency guard: delivery is at-least-once, so a redelivered
+        // message for a job that already reached a terminal (or in-flight)
+        // state must be a no-op.
         if (job.Status != JobStatus.Pending)
         {
-            return;
+            return JobProcessingResult.Skipped();
         }
 
         job.MarkProcessing();
@@ -36,16 +50,59 @@ public sealed class JobProcessingService : IJobProcessingService
                 throw new InvalidOperationException("Forced failure requested via payload.");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            var analysisRequest = new AiAnalysisRequest(
+                JobId: job.Id,
+                JobType: job.JobType,
+                Payload: job.Payload);
 
-            job.MarkCompleted();
+            var analysisResult = await _aiAnalysisClient.AnalyzeAsync(
+                analysisRequest,
+                cancellationToken);
+
+            job.MarkCompleted(analysisResult.Summary);
             await _jobRepository.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Job completed. JobId: {JobId}, TenantId: {TenantId}, AttemptCount: {AttemptCount}, Model: {Model}",
+                job.Id,
+                job.TenantId,
+                job.AttemptCount,
+                analysisResult.Model);
+
+            return JobProcessingResult.Completed();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception exception)
         {
+            if (job.AttemptCount + 1 < _options.MaxAttempts)
+            {
+                job.MarkPendingForRetry();
+                await _jobRepository.SaveChangesAsync(cancellationToken);
+
+                _logger.LogWarning(
+                    "Job attempt failed; retry scheduled. JobId: {JobId}, TenantId: {TenantId}, AttemptCount: {AttemptCount}, Reason: {FailureReason}",
+                    job.Id,
+                    job.TenantId,
+                    job.AttemptCount,
+                    exception.Message);
+
+                return JobProcessingResult.RetryScheduled(exception.Message);
+            }
+
             job.MarkFailed(exception.Message);
             await _jobRepository.SaveChangesAsync(cancellationToken);
-            throw;
+
+            _logger.LogError(
+                "Job failed permanently. JobId: {JobId}, TenantId: {TenantId}, AttemptCount: {AttemptCount}, Reason: {FailureReason}",
+                job.Id,
+                job.TenantId,
+                job.AttemptCount,
+                exception.Message);
+
+            return JobProcessingResult.FailedPermanently(exception.Message);
         }
     }
 

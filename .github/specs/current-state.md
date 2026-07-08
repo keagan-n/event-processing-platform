@@ -2,192 +2,103 @@
 
 ## Summary
 
-The project is a simplified job-processing platform.
+All completion-plan milestones (1-6) are implemented. The platform is feature-complete per `.github/specs/completion-plan.md`.
 
-The current working flow is:
+The working flow is:
 
 ```text
-Client -> Platform.API -> Jobs.Application -> Jobs.Domain -> Jobs.Infrastructure -> PostgreSQL
-API publishes JobSubmittedMessage to RabbitMQ after persistence succeeds.
-Platform.Worker consumes JobSubmittedMessage from RabbitMQ and processes jobs through Jobs.Application.
+Client -> Platform.API -> validate -> per-tenant rate limit check
+       -> persist Job + OutboxMessage in ONE PostgreSQL transaction
+OutboxDispatcherService (in API host) -> polls outbox -> publishes JobSubmittedMessage to RabbitMQ
+Platform.Worker -> consumes jobs.submitted (prefetch-bounded) -> IJobProcessingService
+                -> calls Python ai-service POST /v1/analyze (retry w/ exponential backoff + jitter)
+                -> success: MarkCompleted(result) | failure: retry up to MaxAttempts then MarkFailed + DLQ
+Client -> GET /jobs/{jobId}/status -> status, result, attemptCount
 ```
 
-PostgreSQL is the system of record for all job state.
+PostgreSQL is the system of record for all job and outbox state.
 
 ## Implemented
 
-### API
+### API (`Platform.Api`)
 
-Implemented endpoints:
+- `GET /health`
+- `POST /jobs` — validates (400), rate-limits per tenant (429 + Retry-After), persists job + outbox row atomically (201). No inline RabbitMQ publish.
+- `GET /jobs/{jobId}/status` — returns `jobId`, `tenantId`, `jobType`, `status`, `createdUtc`, `result` (nullable), `attemptCount`.
+- `TenantRateLimiter` — in-memory `PartitionedRateLimiter` token bucket per TenantId. Env: `RATE_LIMIT_TOKENS` (10), `RATE_LIMIT_WINDOW_SECONDS` (60). Applied inside the endpoint because the partition key comes from the request body.
+- `OutboxDispatcherService` — BackgroundService polling every `OUTBOX_POLL_SECONDS` (2), publishing batches of 20 via `IOutboxProcessor`; failed rows keep `Error` and stay unprocessed for the next tick.
+- `APPLY_MIGRATIONS=true` env applies EF migrations on startup (used by docker compose).
+- Serilog structured JSON console logging + request logging.
 
-```text
-GET /health
-POST /jobs
-GET /jobs/{jobId}/status
-```
+### Domain (`Jobs.Domain`)
 
-`POST /jobs` persists jobs to PostgreSQL and publishes `JobSubmittedMessage` to RabbitMQ after persistence succeeds.
-`POST /jobs` validates required fields (`TenantId`, `JobType`, `Payload`).
-Invalid submit requests return `400 Bad Request`.
-Valid submit requests return `201 Created`.
+`Job`: `Id`, `TenantId`, `JobType`, `Payload`, `Status`, `CreatedUtc`, `StartedUtc`, `CompletedUtc`, `FailedUtc`, `FailureReason`, `Result`, `AttemptCount`.
 
-`GET /jobs/{jobId}/status` reads status from PostgreSQL.
-
-### Domain
-
-`Job` includes:
+Transitions (all others throw `InvalidOperationException`):
 
 ```text
-Id
-TenantId
-JobType
-Payload
-Status
-CreatedUtc
-StartedUtc
-CompletedUtc
-FailedUtc
-FailureReason
+Pending -> Processing            MarkProcessing()
+Processing -> Completed          MarkCompleted(result)
+Processing -> Failed             MarkFailed(reason)
+Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount]
 ```
 
-`TenantId` is a string.
+### Application (`Jobs.Application`)
 
-`JobId` is a Guid.
+- `JobSubmissionService` — validates, trims, stages job + outbox message, single `SaveChangesAsync` (transactional outbox). Depends on `IOutboxWriter`, not the queue publisher.
+- `JobProcessingService` — returns `JobProcessingResult` (`Completed` | `Skipped` | `RetryScheduled` | `FailedPermanently`). Non-Pending jobs are skipped (idempotency guard for at-least-once delivery). On failure: `MarkPendingForRetry` while `AttemptCount + 1 < MaxAttempts`, else `MarkFailed`. Never rethrows processing failures — the outcome drives the consumer. `forceFailure` payload follows the same retry-then-DLQ path.
+- `JobProcessingOptions.MaxAttempts` (env `JOB_MAX_ATTEMPTS`, default 3).
+- `OutboxProcessor` / `IOutboxStore` / `IOutboxWriter` / `OutboxOptions` — outbox orchestration lives in Application; EF implementations in Infrastructure.
+- `IAiAnalysisClient` + `AiAnalysisRequest`/`AiAnalysisResult` records.
+- `IJobQueuePublisher` — `PublishJobSubmittedAsync`, `PublishJobRetryAsync` (republish to main queue), `PublishJobFailedAsync` (DLQ + `x-failure-reason` header).
 
-`JobStatus` includes:
+### Infrastructure (`Jobs.Infrastructure`)
 
-```text
-Pending
-Processing
-Completed
-Failed
-```
+- `JobsDbContext` — `jobs` + `outbox_messages` tables. Migrations: InitialJobsSchema, AddJobLifecycleFields, AddJobResult, AddJobAttemptCount, AddOutboxMessages.
+- `JobRepository`, `EfOutboxWriter` (stages in caller's unit of work), `EfOutboxStore`.
+- `RabbitMqJobQueuePublisher` — declares queues on publish; DLQ name from `RabbitMqOptions.DeadLetterQueueName` (env `RABBITMQ_DLQ_NAME`, default `jobs.submitted.dlq`).
+- `HttpAiAnalysisClient` — typed HttpClient, snake_case JSON matching the FastAPI contract.
 
-Domain methods:
+### Worker (`Platform.Worker`)
 
-```text
-Create(...)
-MarkProcessing()
-MarkCompleted()
-MarkFailed(reason)
-```
+- `JobSubmittedMessageConsumerService` — consumes `jobs.submitted` with `BasicQos` prefetch (env `RABBITMQ_PREFETCH`, default 4; deliberate backpressure protecting the AI service). Maps outcomes: Completed/Skipped -> ack; RetryScheduled -> republish + ack; FailedPermanently -> DLQ publish + ack. Unexpected exceptions -> nack without requeue.
+- AI client registered with a resilience handler: 3 retries, exponential backoff + jitter (transient 5xx/timeout/connection failures).
+- Serilog structured JSON console logging.
 
-Allowed transitions:
+### AI Service (`ai-service/`, Python 3.11 / FastAPI)
 
-```text
-Pending -> Processing
-Processing -> Completed
-Processing -> Failed
-```
+- `GET /health` -> `{status, provider}`; `POST /v1/analyze` `{job_id, job_type, payload}` -> `{job_id, summary, model, latency_ms}`.
+- Providers: `stub` (default — deterministic, free, no keys) and `anthropic` (`claude-haiku-4-5`, only when `AI_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` set).
+- 12 pytest tests; ruff-clean.
 
-### Application
+### Tests and CI
 
-Implemented application services:
-
-```text
-IJobSubmissionService
-JobSubmissionService
-IJobStatusService
-JobStatusService
-IJobRepository
-IJobProcessingService
-JobProcessingService
-IJobQueuePublisher
-```
-
-`IJobProcessingService.ProcessJobAsync(Guid jobId, CancellationToken)` loads a job by ID, skips non-Pending jobs, and processes Pending jobs through the domain lifecycle.
-
-### Infrastructure
-
-Implemented:
-
-```text
-JobsDbContext
-JobRepository
-EF Core migrations
-PostgreSQL persistence
-RabbitMqOptions
-RabbitMqJobQueuePublisher
-```
-
-### Worker
-
-`Platform.Worker` consumes `JobSubmittedMessage` from RabbitMQ using `JobSubmittedMessageConsumerService`.
-For each message, the worker resolves `IJobProcessingService` in a DI scope and calls `ProcessJobAsync`.
-Messages are acked after successful processing and nacked without requeue on failure.
-PostgreSQL polling worker has been removed.
+- `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (13), `src/Tests/Platform.Api.Tests` (5) — 39 xUnit tests.
+- `.github/workflows/ci.yml` — dotnet build+test and python ruff+pytest jobs on push/PR to main.
 
 ### Local Development
 
-PostgreSQL runs through Docker Compose.
-RabbitMQ local infrastructure runs through Docker Compose.
-`JobSubmittedMessage` contract exists.
-`IJobQueuePublisher` abstraction exists.
-RabbitMQ publisher implementation exists.
-`POST /jobs` publishes `JobSubmittedMessage` to RabbitMQ after PostgreSQL persistence succeeds.
-Worker consumes `JobSubmittedMessage` from RabbitMQ and processes jobs.
+- `docker compose up --build` runs the full stack: postgres, rabbitmq (+ management UI :15672), ai-service (:8000), api (:5200, auto-migrates), worker. Healthcheck-ordered startup.
+- Infra-only + `dotnet run` flow still works (see README).
+- Secrets from `.env` via DotNetEnv; `.env.example` lists every knob.
 
-Database can be inspected with DBeaver.
-
-Secrets are loaded from `.env` using DotNetEnv.
-
-## Not Implemented
+## Verified End-to-End (2026-07-06)
 
 ```text
-AI calls
-retries
-rate limiting
-DLQ
-auth
-automated tests
+Happy path: submit -> outbox -> dispatcher -> queue -> worker -> ai-service -> Completed with result.
+Retry/DLQ: forceFailure -> 3 attempts -> Failed, attemptCount 2, 1 message in jobs.submitted.dlq.
+Rate limit: 10x 201 then 429 + Retry-After for one tenant; other tenants unaffected.
+Outbox: submit during RabbitMQ outage -> 201; broker restart -> dispatcher publishes -> job Completed.
 ```
 
-Removed from active scope:
+## Not Implemented (intentionally — see completion-plan.md "Explicitly Out of Scope")
 
 ```text
-Redis
-OutboxRelay
-outbox pattern
+Redis, auth, k6, cloud deployment, Kubernetes, frontend,
+separate outbox relay deployable, OpenTelemetry/Jaeger tracing,
+TTL delayed-retry queue, distributed rate limiting
 ```
 
-## Next Milestone
+## Outbox Tradeoff (RESOLVED)
 
-Queue-based dispatch is fully implemented (Milestones 1-4 complete).
-
-Next active implementation order:
-
-```text
-1) Python AI service integration
-2) Retries after AI integration
-3) Rate limiting after queue + AI + retries
-```
-
-Rate limiting constraint:
-
-```text
-Do not use Redis-backed rate limiting by default.
-Prefer PostgreSQL-backed or simple in-memory MVP rate limiting unless explicitly redesigned.
-```
-
-Verified lifecycle transitions:
-
-```text
-Pending -> Processing -> Completed
-Pending -> Processing -> Failed
-```
-
-Forced failure verification exists via payload marker:
-
-```json
-{ "forceFailure": true }
-```
-
-`Platform.Worker` delegates processing to `Jobs.Application` through `IJobProcessingService`.
-
-Outbox tradeoff note:
-
-```text
-For this portfolio MVP, DB save + queue publish is intentionally non-atomic (simpler path).
-If publish fails after DB save, a queue message can be lost.
-Production systems use outbox/transactional messaging to solve this, but outbox is intentionally out of active scope.
-```
+The MVP originally published to RabbitMQ after the DB commit, accepting that a publish failure after save could lose dispatch. Milestone 5 closed this: job + outbox row commit in one transaction and the dispatcher publishes out-of-band. Delivery is now at-least-once; the consumer's non-Pending skip guard makes processing idempotent.

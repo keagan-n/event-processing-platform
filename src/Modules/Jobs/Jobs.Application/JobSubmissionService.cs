@@ -6,14 +6,14 @@ namespace Jobs.Application;
 public sealed class JobSubmissionService : IJobSubmissionService
 {
     private readonly IJobRepository _jobRepository;
-    private readonly IJobQueuePublisher _jobQueuePublisher;
+    private readonly IOutboxWriter _outboxWriter;
 
     public JobSubmissionService(
         IJobRepository jobRepository,
-        IJobQueuePublisher jobQueuePublisher)
+        IOutboxWriter outboxWriter)
     {
         _jobRepository = jobRepository;
-        _jobQueuePublisher = jobQueuePublisher;
+        _outboxWriter = outboxWriter;
     }
 
     public async Task<SubmitJobResult> SubmitAsync(
@@ -37,11 +37,15 @@ public sealed class JobSubmissionService : IJobSubmissionService
             payload: payload);
 
         await _jobRepository.AddAsync(job, cancellationToken);
-        await _jobRepository.SaveChangesAsync(cancellationToken);
 
-        await _jobQueuePublisher.PublishJobSubmittedAsync(
+        // Transactional outbox: the message row is staged in the same unit of
+        // work, so job + outbox row commit atomically. The dispatcher
+        // publishes it to RabbitMQ afterwards.
+        await _outboxWriter.EnqueueAsync(
             new JobSubmittedMessage(job.Id),
             cancellationToken);
+
+        await _jobRepository.SaveChangesAsync(cancellationToken);
 
         return SubmitJobResult.Success(
             jobId: job.Id,

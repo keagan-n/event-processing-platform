@@ -1,585 +1,156 @@
 # Event Processing Platform
 
-A simplified job-processing platform built with **C#/.NET**, **PostgreSQL**, **RabbitMQ (local infrastructure)**, and a **modular monolith** architecture.
+[![CI](https://github.com/keagan-n/event-processing-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/keagan-n/event-processing-platform/actions/workflows/ci.yml)
 
-The goal is to build a small but realistic backend system that demonstrates core distributed-system concepts without adding unnecessary complexity too early.
+An event-driven job-processing platform built with **C#/.NET 10**, **PostgreSQL**, **RabbitMQ**, and a **Python/FastAPI AI service**, structured as a modular monolith. Jobs are submitted over HTTP, persisted transactionally with an outbox, dispatched through RabbitMQ, processed by a worker that calls an AI analysis service, and protected end-to-end by retries, a dead-letter queue, per-tenant rate limiting, and backpressure.
 
-## Local Development Commands
-
-Common commands for running PostgreSQL, RabbitMQ, API, and Worker locally (MVP-focused).
-
-1. Start local infrastructure (PostgreSQL + RabbitMQ) with Docker Compose:
+The entire stack runs locally with one command and zero paid services.
 
 ```bash
-docker compose up -d
+docker compose up --build
 ```
 
-2. Confirm containers are running (expected containers: `event-platform-postgres`, `event-platform-rabbitmq`):
-
-```bash
-docker ps
-```
-
-3. Build the full solution:
-
-```bash
-dotnet build src/Platform.sln
-```
-
-4. Run the API (terminal 1):
-
-```bash
-dotnet run --project src/Platform/API/Platform.Api.csproj
-```
-
-5. Run the Worker (terminal 2):
-
-```bash
-dotnet run --project src/Platform/Worker/Platform.Worker.csproj
-```
-
-6. Test API endpoints:
-
-```text
-GET http://localhost:5200/health
-POST http://localhost:5200/jobs
-GET http://localhost:5200/jobs/{jobId}/status
-```
-
-7. Stop the API/Worker:
-
-```
-Ctrl + C
-```
-
-8. Stop Docker services:
-
-```bash
-docker compose down
-```
-
-Typical local workflow (minimal):
-
-```bash
-docker compose up -d
-dotnet run --project src/Platform/API/Platform.Api.csproj
-dotnet run --project src/Platform/Worker/Platform.Worker.csproj
-```
-
-- Docker/PostgreSQL must be running before testing persistence.
-- RabbitMQ is now included as local queue infrastructure for the queue milestone, but API publishing and worker queue consumption are not wired yet.
-- The API reads the database connection string from `.env` via `DotNetEnv` in `Program.cs`.
-- Do not commit `.env` to source control; commit a `.env.example` as a safe template.
-- Worker processing is implemented and part of the MVP verification flow.
-
-RabbitMQ local verification:
-
-```bash
-docker compose up -d
-docker ps
-```
-
-RabbitMQ management UI:
-
-```text
-http://localhost:15672
-username: guest
-password: guest
-```
-
-## Current MVP Status
-
-Implemented and verified:
-
-- `GET /health`
-- `POST /jobs`
-- `GET /jobs/{jobId}/status`
-- Worker polling loop (~2s) via `Platform.Worker`
-- Worker delegates processing to `IJobProcessingService` (no direct `JobsDbContext` usage in worker logic)
-- Submit-job validation for required `tenantId`, `jobType`, and `payload`
-- Invalid submit requests return `400 Bad Request`; valid submit requests return `201 Created`
-- Lifecycle transitions:
-  - Normal: `Pending -> Processing -> Completed`
-  - Forced failure: `Pending -> Processing -> Failed`
-
-## What This Project Does
-
-The MVP supports a simple job lifecycle:
-
-```text
-Submit Job -> Persist Job -> Process Job -> Update Status -> Query Status
-```
-
-A client submits a job through the API. The job is stored in PostgreSQL. A background worker picks up pending jobs, processes them, updates their status, and the client can query the current status.
-
-## Current MVP Scope
-
-In scope:
-
-- Submit a job with `POST /jobs`
-- Store jobs in PostgreSQL
-- Process pending jobs with a background worker
-- Update job status through a defined lifecycle
-- Query job status with `GET /jobs/{jobId}/status`
-
-Deferred until after the current MVP:
-
-- Queue-based job dispatch (next active implementation; RabbitMQ local infrastructure is in place, queue wiring is not implemented yet)
-- Python AI service integration (after queue dispatch)
-- Retries (after AI integration)
-- Rate limiting (after queue + AI + retries)
-- Dead-letter queue
-- Authentication
-- Authorization
-- k6 performance testing
-- Advanced observability
-
-Removed from active scope:
-
-- Redis
-- OutboxRelay
-- Outbox pattern
-
-Rate limiting constraint for later roadmap work:
-
-- Do not use Redis-backed rate limiting unless explicitly redesigned.
-- Prefer PostgreSQL-backed or simple in-memory MVP rate limiting.
-
-## Current Implementation Status
-
-Currently implemented:
-
-- Repo scaffold
-- Modular project structure
-- Minimal API
-- `GET /health`
-- `POST /jobs`
-- `GET /jobs/{jobId}/status`
-- PostgreSQL persistence
-- Worker processing loop
-- API -> Application -> Domain flow
-- Job domain entity
-- Job status enum
-- Lifecycle timestamps and failure reason tracking
-- Manual API/Worker verification
-
-## Architecture Summary
-
-This project uses a **modular monolith**.
-
-The MVP focuses on the `Jobs` module only. Other modules exist as future extension points but are intentionally deferred.
-
-### Main Projects
-
-| Project | Responsibility |
-|---|---|
-| `Platform.API` | HTTP endpoints and request/response mapping |
-| `Jobs.Application` | Use-case orchestration |
-| `Jobs.Domain` | Job entity, status lifecycle, business rules |
-| `Jobs.Infrastructure` | PostgreSQL/EF Core persistence |
-| `Platform.Worker` | Background job processing |
-
-## High-Level Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    Client[Client / Postman] --> API[Platform.API]
-    API --> App[Jobs.Application]
-    App --> Domain[Jobs.Domain]
-    App --> Infra[Jobs.Infrastructure]
-    Infra --> DB[(PostgreSQL)]
+    Client([Client]) -->|POST /jobs| API
 
-    Worker[Platform.Worker] --> WorkerApp[Jobs.Application]
-    WorkerApp --> WorkerDomain[Jobs.Domain]
-    WorkerApp --> WorkerInfra[Jobs.Infrastructure]
-    WorkerInfra --> DB
+    subgraph API["Platform.Api"]
+        RL[Per-tenant rate limiter]
+        OD[Outbox dispatcher]
+    end
+
+    API -->|"1: job + outbox row (one transaction)"| PG[(PostgreSQL)]
+    OD -->|"2: publish"| Q[/"jobs.submitted"/]
+
+    subgraph MQ["RabbitMQ"]
+        Q
+        DLQ[/"jobs.submitted.dlq"/]
+    end
+
+    Q -->|"3: consume (prefetch-bounded)"| W["Platform.Worker"]
+    W -->|"4: POST /v1/analyze (retry w/ backoff)"| AI["ai-service (Python/FastAPI)"]
+    W -->|"5: status + result"| PG
+    W -->|"max attempts exceeded"| DLQ
+    Client -->|GET /jobs/id/status| API
 ```
 
-## Runtime Flow
+**Flow:** `POST /jobs` validates and persists the job **plus** an outbox row in a single PostgreSQL transaction. A background dispatcher publishes staged messages to RabbitMQ. The worker consumes with a bounded prefetch, loads the job by ID, and calls the Python AI service for analysis. Success stores the result; failure retries up to 3 attempts and then dead-letters. `GET /jobs/{id}/status` reads the outcome.
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant API as Platform.API
-    participant App as Jobs.Application
-    participant Domain as Jobs.Domain
-    participant Infra as Jobs.Infrastructure
-    participant DB as PostgreSQL
-    participant Worker as Platform.Worker
+## Distributed-Systems Concepts Demonstrated
 
-    Client->>API: POST /jobs
-    API->>App: SubmitJobCommand
-    App->>Domain: Job.Create(...)
-    App->>Infra: Save Pending job
-    Infra->>DB: Insert job
-    API-->>Client: 201 Created
+| Concept | Where |
+| --- | --- |
+| Transactional outbox (atomic DB save + publish) | [JobSubmissionService](src/Modules/Jobs/Jobs.Application/JobSubmissionService.cs), [OutboxDispatcherService](src/Platform/API/OutboxDispatcherService.cs) |
+| At-least-once delivery + idempotent consumer | [JobProcessingService](src/Modules/Jobs/Jobs.Application/JobProcessingService.cs) (non-Pending skip guard) |
+| Retry with exponential backoff + jitter (transient HTTP) | [Worker Program.cs](src/Platform/Worker/Program.cs) (resilience handler on the AI client) |
+| Message-level retry + dead-letter queue | [JobProcessingService](src/Modules/Jobs/Jobs.Application/JobProcessingService.cs), [JobSubmittedMessageConsumerService](src/Platform/Worker/JobSubmittedMessageConsumerService.cs) |
+| Per-tenant rate limiting (token bucket, 429 + Retry-After) | [TenantRateLimiter](src/Platform/API/RateLimiting/TenantRateLimiter.cs) |
+| Backpressure (bounded prefetch protecting downstream) | [JobSubmittedMessageConsumerService](src/Platform/Worker/JobSubmittedMessageConsumerService.cs) |
+| Cross-language service boundary (LLM calls isolated in Python) | [ai-service](ai-service/), [HttpAiAnalysisClient](src/Modules/Jobs/Jobs.Infrastructure/AI/HttpAiAnalysisClient.cs) |
+| Structured JSON logging | Serilog in [API](src/Platform/API/Program.cs) and [Worker](src/Platform/Worker/Program.cs) |
 
-    Worker->>App: Process next pending job
-    App->>Infra: Get pending job
-    Infra->>DB: Query Pending job
-    App->>Domain: MarkProcessing()
-    Infra->>DB: Save Processing
-    App->>Domain: MarkCompleted()
-    Infra->>DB: Save Completed
+## Quickstart Demo
 
-    Client->>API: GET /jobs/{id}/status
-    API->>App: Get job status
-    App->>Infra: Load job
-    Infra->>DB: Query job
-    API-->>Client: Current status
-```
-
-## Job Status Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Pending
-    Pending --> Processing
-    Processing --> Completed
-    Processing --> Failed
-```
-
-Allowed transitions:
-
-```text
-Pending -> Processing
-Processing -> Completed
-Processing -> Failed
-```
-
-The domain layer owns these transitions so status cannot be changed arbitrarily by the API, worker, or infrastructure code.
-
-## Polling MVP vs Queue Direction
-
-The current working MVP intentionally uses:
-
-```text
-API -> PostgreSQL
-Worker -> PostgreSQL polling
-```
-
-This proves the core lifecycle first:
-
-```text
-Submitted -> Persisted -> Processed -> Status Updated
-```
-
-This polling path is current behavior, not the final direction.
-
-Next active direction:
-
-```text
-API persists job in PostgreSQL
-API publishes queue message (jobId)
-Worker consumes message
-Worker loads job by jobId
-Worker processes via Jobs.Application
-```
-
-Outbox tradeoff for this portfolio MVP:
-
-- Direct DB write + queue publish is simpler but not atomic.
-- A job can be saved while queue publish fails, which can lose dispatch.
-- Production systems commonly solve this with outbox/transactional messaging.
-- Outbox is intentionally out of active scope for this portfolio MVP.
-
-## Repository Structure
-
-```text
-src/
-  Common/
-    Application/
-    Domain/
-    Infrastructure/
-    Observability/
-
-  Modules/
-    Jobs/
-      Jobs.Application/
-      Jobs.Contracts/
-      Jobs.Domain/
-      Jobs.Infrastructure/
-
-    Tenants/
-      Tenants.Application/
-      Tenants.Contracts/
-      Tenants.Domain/
-      Tenants.Infrastructure/
-
-    AI/
-      AI.Application/
-      AI.Contracts/
-      AI.Infrastructure/
-
-    RateLimiting/
-      RateLimiting.Application/
-      RateLimiting.Infrastructure/
-
-  Platform/
-    API/
-    Worker/
-    OutboxRelay/
-
-ai-service/
-.github/
-  copilot-instructions.md
-  specs/
-Platform.sln
-README.md
-```
-
-## API Endpoints
-
-### `GET /health`
-
-Returns API health.
-
-Example response:
-
-```json
-{
-  "status": "healthy"
-}
-```
-
-### `POST /jobs`
-
-Submits a new job.
-`tenantId`, `jobType`, and `payload` are required and cannot be empty/whitespace.
-
-Example request:
-
-```json
-{
-  "tenantId": "tenant-demo",
-  "jobType": "ai.summary",
-  "payload": "{\"text\":\"Summarize this content\"}"
-}
-```
-
-Example response:
-
-```json
-{
-  "jobId": "generated-guid",
-  "tenantId": "tenant-demo",
-  "jobType": "ai.summary",
-  "status": "Pending",
-  "createdUtc": "timestamp"
-}
-```
-
-Validation failure response (`400 Bad Request`):
-
-```json
-{
-  "message": "Validation failed.",
-  "errors": [
-    "TenantId is required.",
-    "JobType is required.",
-    "Payload is required."
-  ]
-}
-```
-
-### `GET /jobs/{jobId}/status`
-
-Returns the persisted current job status.
-
-Example response:
-
-```json
-{
-  "jobId": "generated-guid",
-  "tenantId": "tenant-demo",
-  "jobType": "ai.summary",
-  "status": "Completed",
-  "createdUtc": "timestamp"
-}
-```
-
-### Example payloads
-
-Normal job payload:
-
-```json
-{
-  "tenantId": "tenant-demo",
-  "jobType": "ai.summary",
-  "payload": "{\"text\":\"Summarize this content\"}"
-}
-```
-
-Forced-failure payload:
-
-```json
-{
-  "tenantId": "tenant-demo",
-  "jobType": "ai.summary",
-  "payload": "{\"text\":\"Summarize this content\",\"forceFailure\":true}"
-}
-```
-
-Expected response:
-
-```json
-{
-  "jobId": "generated-guid",
-  "status": "Pending",
-  "createdUtc": "timestamp",
-  "startedUtc": null,
-  "completedUtc": null,
-  "failedUtc": null,
-  "failureReason": null
-}
-```
-
-## Local Development
-
-### Build
+Prereqs: Docker. Copy the env file and start everything:
 
 ```bash
-dotnet build
+cp .env.example .env
+docker compose up --build
 ```
 
-### Run API
+This starts PostgreSQL, RabbitMQ (management UI at [localhost:15672](http://localhost:15672), guest/guest), the Python AI service, the API (migrations auto-applied), and the worker.
+
+**1. Submit a job and watch it complete with an AI result:**
 
 ```bash
-dotnet run --project src/Platform/API/Platform.Api.csproj
+curl -s -X POST http://localhost:5200/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"tenantId":"tenant-demo","jobType":"analysis","payload":"{\"text\":\"quarterly loan portfolio risk review\"}"}'
+
+# Poll with the returned jobId — status becomes Completed with a result
+curl -s http://localhost:5200/jobs/<jobId>/status
 ```
 
-The API runs on the configured local port, for example:
+**2. Watch a failing job retry and dead-letter:**
+
+```bash
+curl -s -X POST http://localhost:5200/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"tenantId":"tenant-demo","jobType":"analysis","payload":"{\"forceFailure\":true}"}'
+
+# After ~5s: status shows Failed with attemptCount 2 (3 attempts total),
+# and jobs.submitted.dlq holds one message (see the management UI → Queues).
+```
+
+**3. Trip the per-tenant rate limit (10 requests/minute per tenant):**
+
+```bash
+for i in $(seq 1 12); do
+  curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:5200/jobs \
+    -H "Content-Type: application/json" \
+    -d '{"tenantId":"tenant-burst","jobType":"analysis","payload":"{\"n\":1}"}'
+done
+# → 201 ×10, then 429 with a Retry-After header. Other tenants are unaffected.
+```
+
+**4. Prove the outbox (submit during a broker outage):**
+
+```bash
+docker stop event-platform-rabbitmq
+curl -s -X POST http://localhost:5200/jobs -H "Content-Type: application/json" \
+  -d '{"tenantId":"tenant-outbox","jobType":"analysis","payload":"{\"text\":\"submitted during outage\"}"}'
+# → 201. The job and its outbox row committed atomically.
+docker start event-platform-rabbitmq
+# ~20s later the dispatcher publishes the staged message and the job completes.
+```
+
+## Design Decisions
+
+- **Modular monolith over microservices.** Module boundaries (Domain / Application / Infrastructure per module) give the architectural discipline of services without the operational overhead; the one real service boundary (Python AI service) exists because it isolates a different language runtime and failure domain.
+- **Transactional outbox over publish-after-save.** The MVP originally published to RabbitMQ after the DB commit, which can silently lose dispatch if the broker is down. The outbox stages the message in the same transaction; an in-process dispatcher publishes it out-of-band. Delivery becomes at-least-once, which the consumer's idempotency guard absorbs.
+- **Attempts tracked in PostgreSQL, not message headers.** The database is the system of record; a retry is a plain republish and the job row carries `attempt_count`. Simpler than header bookkeeping and survives broker restarts.
+- **In-memory rate limiting over Redis.** A `PartitionedRateLimiter` token bucket per tenant is correct for a single API instance and is an honest answer at this scale; distributed rate limiting is listed as future work rather than prematurely built.
+- **Thin messages (jobId only).** Consumers load state from the source of truth, so stale payloads in flight are impossible.
+- **AI provider abstraction.** The Python service defaults to a deterministic stub (free, testable, CI-friendly); setting `AI_PROVIDER=anthropic` + an API key swaps in Claude without touching .NET.
+
+## Known Limitations / Future Work
+
+- Single API instance assumed for rate limiting (distributed limiter would need shared state).
+- Retries redeliver immediately (in-process backoff already spaces real attempts); a TTL-based delayed-retry queue is a known upgrade.
+- No distributed tracing (OpenTelemetry across the broker is the natural next step).
+- Multiple competing worker instances work at-least-once but haven't been load-verified.
+- No auth by design — this project demonstrates processing patterns, not identity.
+
+## Local Development (without containerized API/worker)
+
+```bash
+docker compose up -d postgres rabbitmq ai-service   # infrastructure only
+dotnet build src/Platform.sln
+dotnet ef database update \
+  --project src/Modules/Jobs/Jobs.Infrastructure/Jobs.Infrastructure.csproj \
+  --startup-project src/Platform/API/Platform.Api.csproj --context JobsDbContext
+dotnet run --project src/Platform/API/Platform.Api.csproj      # terminal 1
+dotnet run --project src/Platform/Worker/Platform.Worker.csproj # terminal 2
+```
+
+## Tests
+
+```bash
+dotnet test src/Platform.sln          # 39 tests: domain, application, API
+cd ai-service && python3 -m pytest    # 12 tests: FastAPI service
+```
+
+CI runs both suites plus `ruff` linting on every push and pull request.
+
+## Repository Layout
 
 ```text
-http://localhost:5200
+src/Modules/Jobs/        Jobs module: Domain, Application, Contracts, Infrastructure
+src/Platform/API/        HTTP transport, rate limiting, outbox dispatcher
+src/Platform/Worker/     RabbitMQ consumer host
+src/Tests/               xUnit test projects
+ai-service/              Python FastAPI analysis service (stub + Anthropic providers)
+.github/specs/           Living specs: current state, completion plan, verification
 ```
-
-## Postman Testing
-
-### Health Check
-
-```text
-GET http://localhost:5200/health
-```
-
-Expected response:
-
-```json
-{
-  "status": "healthy"
-}
-```
-
-### Submit Job
-
-```text
-POST http://localhost:5200/jobs
-```
-
-Header:
-
-```text
-Content-Type: application/json
-```
-
-Body:
-
-```json
-{
-  "tenantId": "11111111-1111-1111-1111-111111111111",
-  "jobType": "ai.summary",
-  "payload": "{\"text\":\"Summarize this content\"}"
-}
-```
-
-Expected result:
-
-```text
-201 Created
-```
-
-## Spec-Driven Development
-
-This repo follows spec-driven development.
-
-Project specs live in:
-
-```text
-.github/specs/
-```
-
-Current specs:
-
-```text
-project-scope.md
-architecture.md
-jobs-module.md
-api-contracts.md
-persistence.md
-worker-processing.md
-development-plan.md
-```
-
-AI coding assistants should follow:
-
-```text
-.github/copilot-instructions.md
-```
-
-## MVP Milestones
-
-### 1. Current Vertical Slice
-
-Status: mostly complete.
-
-- `GET /health`
-- `POST /jobs`
-- API -> Application -> Domain flow
-- Job creation
-- `201 Created` response
-
-### 2. PostgreSQL Persistence
-
-Next milestone.
-
-- Add EF Core PostgreSQL packages
-- Create `JobsDbContext`
-- Create repository abstraction
-- Implement repository in `Jobs.Infrastructure`
-- Persist submitted jobs
-- Add migration
-
-### 3. Job Status Endpoint
-
-- Add status query application service
-- Add `GET /jobs/{jobId}/status`
-- Return current status
-- Return `404` for missing jobs
-
-### 4. Worker Processing
-
-- Add background worker
-- Poll PostgreSQL for pending jobs
-- Mark jobs `Processing`
-- Simulate work
-- Mark jobs `Completed` or `Failed`
-
-### 5. Documentation Cleanup
-
-- Update README once the full MVP works
-- Add final run instructions
-- Add final Postman examples
-- Document known limitations
-
-## Design Philosophy
-
-This project prioritizes:
-
-- simple implementation first
-- clean architecture boundaries
-- durable persistence
-- explicit domain lifecycle
-- incremental development
-- production-minded tradeoffs without premature complexity
-
-The goal is not to build the most complex architecture possible. The goal is to build the smallest complete backend system that can be explained clearly in code reviews, interviews, and resume discussions.

@@ -25,6 +25,8 @@ public sealed class JobStatusService : IJobStatusService
             TenantId: job.TenantId,
             JobType: job.JobType,
             Status: job.Status.ToString(),
-            CreatedUtc: job.CreatedUtc);
+            CreatedUtc: job.CreatedUtc,
+            Result: job.Result,
+            AttemptCount: job.AttemptCount);
     }
 }

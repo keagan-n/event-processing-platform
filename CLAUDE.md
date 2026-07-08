@@ -12,13 +12,14 @@ This repo is a simplified event/job-processing platform using:
 - Docker Compose
 - Modular monolith architecture
 
-## Current MVP
-
-The current MVP flow is:
+## Current Flow
 
 ```text
-POST /jobs -> persist in PostgreSQL -> publish JobSubmittedMessage to RabbitMQ
-Worker consumes RabbitMQ -> loads job by jobId -> processes through Jobs.Application -> GET job status
+POST /jobs -> rate limit -> persist Job + outbox row in one transaction
+Outbox dispatcher (API host) -> publishes JobSubmittedMessage to RabbitMQ
+Worker consumes RabbitMQ -> processes through Jobs.Application -> calls Python ai-service
+Failures retry up to JOB_MAX_ATTEMPTS then dead-letter to jobs.submitted.dlq
+GET /jobs/{jobId}/status -> status, result, attemptCount
 ```
 
 PostgreSQL is the system of record. RabbitMQ is the active queue. Worker does not poll PostgreSQL.
@@ -26,27 +27,28 @@ PostgreSQL is the system of record. RabbitMQ is the active queue. Worker does no
 ## Current State
 
 See `.github/specs/current-state.md` for full implemented behavior.
-See `.github/specs/queue-ai-retry-rate-limit-roadmap.md` for active roadmap.
+See `.github/specs/completion-plan.md` for the authoritative final-scope plan and milestone order.
 See `.claude/context/README.md` for Claude Code working memory.
 
-Already implemented:
+Already implemented (all completion-plan milestones, 1-6):
 
-- `GET /health`
-- `POST /jobs` (validates, persists, publishes to RabbitMQ)
-- `GET /jobs/{jobId}/status`
-- PostgreSQL persistence via EF Core
-- RabbitMQ queue publishing (`IJobQueuePublisher`, `RabbitMqJobQueuePublisher`)
-- `JobSubmittedMessage` contract
-- Worker consumes RabbitMQ messages (`JobSubmittedMessageConsumerService`)
-- Worker processes jobs through `IJobProcessingService`
-- Job lifecycle: `Pending -> Processing -> Completed` or `Pending -> Processing -> Failed`
-- `forceFailure` payload triggers failure path
+- `GET /health`, `POST /jobs`, `GET /jobs/{jobId}/status` (status + result + attemptCount)
+- PostgreSQL persistence via EF Core (5 migrations, incl. `outbox_messages`)
+- Transactional outbox: `IOutboxWriter`/`EfOutboxWriter` staged in the jobs transaction; `OutboxDispatcherService` in the API host publishes to RabbitMQ
+- Worker consumes RabbitMQ (`JobSubmittedMessageConsumerService`, prefetch-bounded)
+- Python `ai-service` (FastAPI): stub provider default, optional Anthropic provider
+- Retries: resilience handler (exponential backoff + jitter) on the AI HTTP client; message-level retry via `MarkPendingForRetry`/`AttemptCount` up to `JOB_MAX_ATTEMPTS`, then `jobs.submitted.dlq`
+- Per-tenant token-bucket rate limiting on `POST /jobs` (429 + Retry-After)
+- Job lifecycle: `Pending -> Processing -> (Completed | Failed | Pending-for-retry)`
+- `forceFailure` payload exercises the retry-then-DLQ path
+- 39 xUnit tests + 12 pytest tests; GitHub Actions CI
+- Serilog structured JSON logging; full-stack `docker compose up --build`
 
 Next milestone:
 
 ```text
-Queue-based dispatch is complete.
-Next: Python AI service integration, then retries, then rate limiting.
+None — completion-plan.md milestones 1-6 are done and verified end-to-end.
+Remaining ideas live in README "Known Limitations / Future Work".
 ```
 
 ## Architecture Boundaries
@@ -67,30 +69,33 @@ Do not let Worker directly mutate status fields.
 
 ## Deferred Features
 
-Do not implement unless explicitly requested:
+Do not implement (permanently out of scope — see completion-plan.md for rationale):
 
 - Redis
-- outbox
-- outbox relay
-- dead-letter queue
+- outbox relay (as a separate deployable; the in-process outbox dispatcher IS in scope)
 - auth
 - k6 tests
 - cloud deployment
+- Kubernetes
+- frontend/UI
+
+Now IN scope as planned milestones (see `.github/specs/completion-plan.md`):
+
+- dead-letter queue (Milestone 3)
+- transactional outbox with in-process dispatcher (Milestone 5)
 
 Roadmap constraints:
 
 - Queue-based dispatch is complete.
-- Python AI service integration is next.
-- Retry policies come after AI integration.
-- Rate limiting remains in roadmap and comes later.
+- Milestone order in completion-plan.md is authoritative.
 - Rate limiting should not be Redis-backed unless explicitly redesigned.
-- Future AI calls go through Python `ai-service`, not direct OpenAI SDK from .NET.
+- AI calls go through the Python `ai-service`, never a direct LLM SDK call from .NET.
 
-Outbox tradeoff note:
+Outbox tradeoff note (RESOLVED):
 
-- Without outbox, DB save + queue publish is not atomic.
-- Publish failure after DB save can lose dispatch.
-- Outbox/transactional messaging solves this in production but is intentionally out of active scope for this portfolio MVP.
+- Historically, DB save + queue publish was not atomic and a publish failure could lose dispatch.
+- Milestone 5 closed this: job + outbox row commit in one transaction; the in-process dispatcher publishes out-of-band.
+- Delivery is at-least-once; the consumer's non-Pending skip guard makes processing idempotent.
 
 ## Development Style
 

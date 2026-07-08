@@ -12,6 +12,8 @@ public sealed class Job
     public DateTime? CompletedUtc { get; private set; }
     public DateTime? FailedUtc { get; private set; }
     public string? FailureReason { get; private set; }
+    public string? Result { get; private set; }
+    public int AttemptCount { get; private set; }
 
     private Job(
         Guid id,
@@ -73,15 +75,32 @@ public sealed class Job
         StartedUtc = DateTime.UtcNow;
     }
 
-    public void MarkCompleted()
+    public void MarkCompleted(string result)
     {
         if (Status != JobStatus.Processing)
         {
             throw new InvalidOperationException($"Cannot move job from {Status} to Completed.");
         }
 
+        if (string.IsNullOrWhiteSpace(result))
+        {
+            throw new ArgumentException("Result is required.", nameof(result));
+        }
+
         Status = JobStatus.Completed;
         CompletedUtc = DateTime.UtcNow;
+        Result = result.Trim();
+    }
+
+    public void MarkPendingForRetry()
+    {
+        if (Status != JobStatus.Processing)
+        {
+            throw new InvalidOperationException($"Cannot move job from {Status} back to Pending for retry.");
+        }
+
+        Status = JobStatus.Pending;
+        AttemptCount++;
     }
 
     public void MarkFailed(string failureReason)

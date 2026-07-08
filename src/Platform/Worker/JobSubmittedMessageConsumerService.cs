@@ -49,7 +49,9 @@ public sealed class JobSubmittedMessageConsumerService : BackgroundService
                 autoDelete: false,
                 arguments: null);
 
-            channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+            // Deliberate backpressure: bounds in-flight messages so the worker
+            // never floods the downstream AI service.
+            channel.BasicQos(prefetchSize: 0, prefetchCount: _options.PrefetchCount, global: false);
 
             var consumer = new AsyncEventingBasicConsumer(channel);
 
@@ -74,11 +76,41 @@ public sealed class JobSubmittedMessageConsumerService : BackgroundService
 
                     using var scope = _serviceScopeFactory.CreateScope();
                     var processingService = scope.ServiceProvider.GetRequiredService<IJobProcessingService>();
+                    var queuePublisher = scope.ServiceProvider.GetRequiredService<IJobQueuePublisher>();
 
-                    await processingService.ProcessJobAsync(message.JobId, stoppingToken);
+                    var result = await processingService.ProcessJobAsync(message.JobId, stoppingToken);
+
+                    switch (result.Outcome)
+                    {
+                        case JobProcessingOutcome.RetryScheduled:
+                            await queuePublisher.PublishJobRetryAsync(message, stoppingToken);
+                            _logger.LogWarning(
+                                "Processing failed for JobId: {JobId}. Retry republished. Reason: {FailureReason}",
+                                message.JobId,
+                                result.FailureReason);
+                            break;
+
+                        case JobProcessingOutcome.FailedPermanently:
+                            await queuePublisher.PublishJobFailedAsync(
+                                message,
+                                result.FailureReason ?? "Unknown failure.",
+                                stoppingToken);
+                            _logger.LogError(
+                                "Processing failed permanently for JobId: {JobId}. Sent to DLQ. Reason: {FailureReason}",
+                                message.JobId,
+                                result.FailureReason);
+                            break;
+
+                        case JobProcessingOutcome.Skipped:
+                            _logger.LogInformation("JobId: {JobId} not in a runnable state. Skipped.", message.JobId);
+                            break;
+
+                        default:
+                            _logger.LogInformation("Successfully processed JobId: {JobId}", message.JobId);
+                            break;
+                    }
 
                     channel.BasicAck(eventArgs.DeliveryTag, multiple: false);
-                    _logger.LogInformation("Successfully processed JobId: {JobId}", message.JobId);
                 }
                 catch (InvalidOperationException ex) when (ex.Message.Contains("was not found"))
                 {

@@ -10,6 +10,11 @@ services:
       - "${POSTGRES_HOST_PORT}:5432"
     volumes:
       - event_platform_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   rabbitmq:
     image: rabbitmq:3-management
     container_name: event-platform-rabbitmq
@@ -21,6 +26,65 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+  ai-service:
+    build: ./ai-service
+    container_name: event-platform-ai-service
+    environment:
+      AI_PROVIDER: ${AI_PROVIDER:-stub}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+  api:
+    build:
+      context: .
+      dockerfile: src/Platform/API/Dockerfile
+    container_name: event-platform-api
+    environment:
+      JOBS_DATABASE_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      APPLY_MIGRATIONS: "true"
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-2}
+      RATE_LIMIT_TOKENS: ${RATE_LIMIT_TOKENS:-10}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+    ports:
+      - "5200:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+  worker:
+    build:
+      context: .
+      dockerfile: src/Platform/Worker/Dockerfile
+    container_name: event-platform-worker
+    environment:
+      JOBS_DATABASE_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      AI_SERVICE_BASE_URL: http://ai-service:8000
+      JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+      RABBITMQ_PREFETCH: ${RABBITMQ_PREFETCH:-4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+      api:
+        condition: service_healthy
 
 volumes:
   event_platform_postgres_data:

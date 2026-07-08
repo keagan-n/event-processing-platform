@@ -4,10 +4,11 @@ Documentation map for agents and contributors.
 
 ## Source of Truth
 
-These two files control current project reality. They override older historical specs if there is a conflict:
+These files control current project reality. They override older historical specs if there is a conflict:
 
 - **current-state.md** — What is implemented right now.
-- **queue-ai-retry-rate-limit-roadmap.md** — Active roadmap and implementation order.
+- **completion-plan.md** — Authoritative final-scope plan and milestone order (supersedes the roadmap's milestone breakdown).
+- **queue-ai-retry-rate-limit-roadmap.md** — Earlier roadmap; milestone detail superseded by completion-plan.md.
 
 ## Architecture and Design
 

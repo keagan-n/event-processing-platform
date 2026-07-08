@@ -1,5 +1,9 @@
 # Queue, AI, Retry, Rate-Limit Roadmap
 
+> **Superseded:** the remaining milestone breakdown and final scope now live in
+> `completion-plan.md`. That file wins on any conflict. This document remains
+> accurate as a record of the implemented queue milestones.
+
 ## Current Working State (Implemented)
 
 ```text
@@ -72,12 +76,17 @@ Do not use Redis-backed rate limiting unless explicitly redesigned.
 Prefer PostgreSQL-backed or simple in-memory MVP rate limiting.
 ```
 
-## Outbox Tradeoff (Intentional for Portfolio MVP)
+## Outbox Tradeoff (RESOLVED — completion-plan Milestone 5)
+
+Historical context (accepted during the MVP phase):
 
 ```text
 Without outbox, DB save + queue publish is not atomic.
 A job could be saved but queue publish could fail.
-This simpler tradeoff is accepted for this portfolio MVP.
-In production, outbox/transactional messaging would solve this.
-Outbox is intentionally out of active scope.
+This simpler tradeoff was accepted for the MVP.
 ```
+
+Resolution: the transactional outbox now commits the job and the outbox row
+in one PostgreSQL transaction; the in-process dispatcher publishes to
+RabbitMQ out-of-band. Delivery is at-least-once and the consumer's
+idempotency guard absorbs duplicates.

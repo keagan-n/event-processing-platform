@@ -5,4 +5,6 @@ public sealed record GetJobStatusResult(
     string TenantId,
     string JobType,
     string Status,
-    DateTime CreatedUtc);
+    DateTime CreatedUtc,
+    string? Result,
+    int AttemptCount);
