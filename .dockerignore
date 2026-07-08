@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/.venv/
+.git/
+.github/
+.claude/
+**/*.md
+.env
