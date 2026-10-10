@@ -1,157 +1,44 @@
 # Architecture
 
-## Architecture Style
+A modular monolith with two .NET hosts and one Python service. See [current state](current-state.md) for implemented features and [completion plan](completion-plan.md) for scope.
 
-This project uses a modular monolith architecture.
+## Runtime Flow
 
-The goal is to keep the system simple while preserving clean boundaries between:
-
-- API transport concerns
-- Application use cases
-- Domain rules
-- Infrastructure implementation
-- Background worker processing
-
-## Current Modules
-
-The repo contains these modules:
-
-- Jobs
-- Tenants
-- AI
-- RateLimiting
-
-## Active MVP Module
-
-The MVP focuses only on the `Jobs` module.
-
-## Deferred Modules
-
-These modules exist for future phases but are not part of the current MVP:
-
-- Tenants
-- AI
-- RateLimiting
-
-They should not be expanded unless explicitly requested.
-
-## Layer Responsibilities
-
-### Platform.API
-
-Responsible for:
-
-- HTTP endpoints
-- Request/response contracts
-- Mapping API requests to application commands
-- Returning HTTP results
-
-The API should not contain business logic.
-
-### Jobs.Application
-
-Responsible for:
-
-- Use-case orchestration
-- Commands
-- Results
-- Application services
-- Repository abstractions
-
-The application layer coordinates domain behavior and persistence abstractions.
-
-### Jobs.Domain
-
-Responsible for:
-
-- Job entity
-- Job status lifecycle
-- Domain invariants
-- Valid status transitions
-
-The domain layer must not depend on ASP.NET, EF Core, PostgreSQL, Redis, or HTTP concepts.
-
-### Jobs.Infrastructure
-
-Responsible for:
-
-- EF Core DbContext
-- PostgreSQL mapping
-- Repository implementations
-- Database-specific behavior
-
-Infrastructure implements abstractions defined by the application layer.
-
-### Platform.Worker
-
-Responsible for:
-
-- Running background processing
-- Polling for pending jobs
-- Calling application services to process jobs
-
-The worker should not directly mutate database rows or bypass domain logic.
-
-## Dependency Rules
-
-Allowed dependencies:
-
-```text
-Platform.API -> Jobs.Application
-Jobs.Application -> Jobs.Domain
-Jobs.Infrastructure -> Jobs.Application
-Jobs.Infrastructure -> Jobs.Domain
-Platform.Worker -> Jobs.Application
-Platform.Worker -> Jobs.Infrastructure
-
-Forbidden dependencies:
-Jobs.Domain -> Jobs.Application
-Jobs.Domain -> Jobs.Infrastructure
-Jobs.Domain -> EF Core
-Jobs.Domain -> ASP.NET
-Jobs.Domain -> PostgreSQL
-Jobs.Application -> Platform.API
-Jobs.Application -> Platform.Worker
-
+```mermaid
 flowchart LR
-    Client[Client / Postman] --> API[Platform.API]
-    API --> App[Jobs.Application]
-    App --> Domain[Jobs.Domain]
-    App --> Infra[Jobs.Infrastructure]
-    Infra --> DB[(PostgreSQL)]
+    Client -->|POST /jobs| API[Platform.API]
+    API -->|one transaction: job + outbox| DB[(PostgreSQL)]
+    Dispatcher[Outbox dispatcher in API] -->|read staged messages| DB
+    Dispatcher -->|publish + broker confirm| Queue[RabbitMQ jobs.submitted]
+    Queue -->|bounded prefetch| Worker[Platform.Worker]
+    Worker --> Application[Jobs.Application]
+    Application -->|repository| DB
+    Application -->|AI client abstraction| Python[Python FastAPI]
+    Python --> Provider[Stub or Anthropic provider]
+    Worker -->|retry publish| Queue
+    Worker -->|exhausted attempts| DLQ[RabbitMQ jobs.submitted.dlq]
+    Client -->|GET status| API
+```
 
-flowchart LR
-    Worker[Platform.Worker] --> App[Jobs.Application]
-    App --> Domain[Jobs.Domain]
-    App --> Infra[Jobs.Infrastructure]
-    Infra --> DB[(PostgreSQL)]
+## Responsibilities and Dependencies
 
-sequenceDiagram
-    participant Client
-    participant API as Platform.API
-    participant App as Jobs.Application
-    participant Domain as Jobs.Domain
-    participant Infra as Jobs.Infrastructure
-    participant DB as PostgreSQL
-    participant Worker as Platform.Worker
+| Layer | Responsibility |
+| --- | --- |
+| Platform.API | HTTP transport, tenant limiter, composition, optional startup migrations, hosted outbox dispatcher |
+| Jobs.Application | Submission/status/processing use cases; repository, queue, AI and outbox abstractions |
+| Jobs.Domain | Job invariants and lifecycle transitions; no framework dependencies |
+| Jobs.Infrastructure | EF Core/Npgsql persistence, RabbitMQ publisher, HTTP AI client |
+| Platform.Worker | RabbitMQ consumer host; calls application services and handles acknowledgement/outcome routing |
+| ai-service | FastAPI analysis contract and swappable providers; no .NET LLM SDK calls |
 
-    Client->>API: POST /jobs
-    API->>App: SubmitJobCommand
-    App->>Domain: Job.Create(...)
-    App->>Infra: Add Job
-    Infra->>DB: Insert Pending job
-    API-->>Client: 201 Created
+Hosts reference Application and Infrastructure for DI wiring. Infrastructure implements Application abstractions and maps Domain entities. Application references Domain and Contracts, never either host. Domain must not reference EF Core, ASP.NET, PostgreSQL, HTTP or DI.
 
-    Worker->>App: Process next pending job
-    App->>Infra: Get pending job
-    Infra->>DB: Query Pending job
-    App->>Domain: MarkProcessing()
-    Infra->>DB: Save Processing
-    App->>Domain: MarkCompleted()
-    Infra->>DB: Save Completed
+The Tenants, AI, and RateLimiting .NET module projects are scaffolding. Active behavior lives in Jobs, the hosts, and the Python service; these placeholder modules are not separate implemented subsystems.
 
-    Client->>API: GET /jobs/{id}/status
-    API->>App: Get status
-    App->>Infra: Get job by id
-    Infra->>DB: Query job
-    API-->>Client: Current status
+## Persistence and Delivery Boundaries
+
+Submission stages a job and its outbox message using the same scoped DbContext. One `SaveChangesAsync` commits both. The API dispatcher polls only the outbox; the worker consumes RabbitMQ and never polls PostgreSQL for jobs.
+
+The dispatcher marks a row processed only after a confirmed, routable RabbitMQ publish. Broker outages leave it staged. A crash after publish confirmation but before the database update can cause another publish, so consumers must tolerate duplicate delivery.
+
+The non-Pending status guard prevents sequential duplicates from repeating completed work. It is not an atomic claim for multiple workers. Retry/DLQ publishing is not transactional with job-state changes. Crash recovery of Processing jobs and coordination between multiple dispatcher/worker instances remain limitations; see the README.

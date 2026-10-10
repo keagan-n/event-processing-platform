@@ -2,7 +2,7 @@
 
 ## Summary
 
-The completion-plan feature set is implemented. This is a single-instance demo with explicit crash-recovery limitations, not a production reliability guarantee (see below).
+The completion-plan feature set is implemented and the local portfolio demo is verified. This is a single-instance demo with explicit crash-recovery limitations, not a production reliability guarantee (see below).
 
 The working flow is:
 
@@ -75,7 +75,7 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 ### Tests and CI
 
 - `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (35, including HTTP AI-client contract and UTF-8 payload-limit regressions), `src/Tests/Platform.Api.Tests` (5 limiter cases) — 61 xUnit cases, plus 18 pytest cases: 79 total.
-- `.github/workflows/ci.yml` — dotnet build+test, python ruff+pytest, and a full Compose startup/runtime-image scan job on push/PR to main. The container job forces the free stub provider.
+- `.github/workflows/ci.yml` — dotnet build+test, python ruff+pytest, and a full Compose demo job on push/PR to main. The demo runs `scripts/smoke_test.py --broker-outage` with `.env.example` and the free stub.
 - CI fails on NuGet/Python advisory findings and Trivy runtime-image findings at any severity. `.github/workflows/security.yml` scans full Git history and current files with Gitleaks. Actions/scanners are pinned, checkout credentials are not persisted, and workflow permissions are read-only.
 
 ### Local Development
@@ -84,15 +84,21 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 - Infra-only + `dotnet run` flow still works (see README).
 - Secrets from `.env` via DotNetEnv with `NoClobber()` so process environment variables win; `.env.example` includes the local .NET connection string. Compose constructs its container connection string from `POSTGRES_*`. Queue/DLQ names are wired into hosts, and worker startup waits for AI health. The API pins Microsoft.OpenApi 2.7.5 to fix the vulnerable transitive dependency.
 - All published ports bind to loopback. Runtime images use digest-pinned Alpine bases with distro security updates. PostgreSQL's bundled Go helper is replaced with Alpine `su-exec`; the AI image excludes dev tools and removes installers after dependency installation. API/worker/AI run as non-root with read-only filesystems, dropped capabilities, and bounded temporary storage; all services disable privilege escalation.
-- `.env` and private key material are excluded from Git and Docker build contexts. PostgreSQL Alpine/RabbitMQ 4 use fresh volumes; old volume declarations remain for preservation.
+- `.env` and private key material are excluded from Git and Docker build contexts. PostgreSQL Alpine/RabbitMQ 4 use fresh volumes; old volume declarations remain for preservation. See `SECURITY.md` for audit scope and migration caveats.
 
-## Verified End-to-End (2026-07-06)
+## Verified End-to-End and Security (2026-10-10)
 
 ```text
 Happy path: submit -> outbox -> dispatcher -> queue -> worker -> ai-service -> Completed with result.
 Retry/DLQ: forceFailure -> 3 attempts -> Failed, attemptCount 2, 1 message in jobs.submitted.dlq.
 Rate limit: 10x 201 then 429 + Retry-After for one tenant; other tenants unaffected.
-Outbox: submit during RabbitMQ outage -> 201; broker restart -> dispatcher publishes -> job Completed.
+Outbox: submit during RabbitMQ outage -> 201/Pending; broker restart -> confirmed dispatch -> job Completed.
+Contracts: invalid/oversized fields and >64 KiB payload -> 400; >256 KiB body -> 413; unknown job -> 404; Location resolves to status route.
+Build: dotnet build src/Platform.sln -> 0 warnings, 0 errors.
+Tests: 61 xUnit + 18 pytest passed; ruff passed for ai-service and scripts.
+Environment: isolated Docker Compose stack with fresh PostgreSQL/RabbitMQ volumes and .env.example.
+Security: no real secrets found in working files or 31 local commits; NuGet/Python advisory audits clean.
+Images: all five final Linux arm64 runtime images report zero known vulnerabilities in Trivy, all severities, no CVE suppressions.
 ```
 
 ## Not Implemented (intentionally — see completion-plan.md "Explicitly Out of Scope")

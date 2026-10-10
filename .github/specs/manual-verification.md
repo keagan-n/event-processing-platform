@@ -1,119 +1,74 @@
-# Manual Verification Checklist
+# Manual Verification
 
-End-to-end local verification for the current MVP.
+Use the public example configuration and free stub. The full-stack demo needs Docker Compose v2; the automated check additionally needs Python 3.9+ (standard library only). See [API contracts](api-contracts.md) for request/response details and [current state](current-state.md) for verified behavior and limits.
 
-## Prerequisites
+## Start and Verify the Full Demo
+
+From the repository root, with ports 5200, 5432, 5672, 8000 and 15672 available:
 
 ```bash
-docker compose up -d
-docker ps
-# Expected: event-platform-postgres, event-platform-rabbitmq
+docker compose --env-file .env.example up --build -d --wait
+docker compose --env-file .env.example ps
+python3 scripts/smoke_test.py
+python3 scripts/smoke_test.py --broker-outage --env-file .env.example
 ```
 
-## Start Services
+The smoke check uses unique tenant IDs and verifies:
 
-Terminal 1 — API:
-```bash
-dotnet run --project src/Platform/API/Platform.Api.csproj
-```
+- Required/oversized fields or a payload exceeding 64 KiB UTF-8 return 400; a complete body exceeding 256 KiB returns 413; unknown jobs return 404.
+- Submission returns 201 Pending and a usable status Location.
+- PostgreSQL -> outbox -> RabbitMQ -> worker -> Python analysis -> Completed with result.
+- Forced failure retries three times, returns Failed with attemptCount 2 and failureReason, and adds a DLQ message.
+- Ten accepted submissions per tenant, then 429 with Retry-After; another tenant can still submit.
+- Optional broker outage: stop RabbitMQ, accept a Pending job, restart RabbitMQ, then complete the staged job.
+- Main queue eventually drains and a worker consumer remains attached.
 
-Terminal 2 — Worker:
-```bash
-dotnet run --project src/Platform/Worker/Platform.Worker.csproj
-```
+Assumes the default three job attempts, ten rate-limit tokens and queue names. Custom token/queue names can be passed with `--tokens`, `--queue` and `--dlq`. The outage option stops the selected Compose project's broker and always attempts to restart it. It creates demo data; no database/queue purge occurs.
 
-## Health Check
+## Inspect Manually
 
 ```bash
 curl -s http://localhost:5200/health
-# Expected: {"status":"healthy"}
-```
-
-## Submit Normal Job
-
-```bash
-curl -s -X POST http://localhost:5200/jobs \
+curl -i -X POST http://localhost:5200/jobs \
   -H "Content-Type: application/json" \
-  -d '{"tenantId":"tenant-test","jobType":"ai.summary","payload":"{\"text\":\"Test verification\"}"}'
-# Expected: 201 Created, status "Pending"
-# Capture jobId from response.
+  -d '{"tenantId":"tenant-manual","jobType":"analysis","payload":"{\"text\":\"Quarterly portfolio risk review\"}"}'
+# Poll the returned Location; expect Completed and a non-null result.
+curl -s http://localhost:5200/jobs/<jobId>/status
 ```
 
-## Verify Normal Job Completed
+RabbitMQ management UI: [localhost:15672](http://localhost:15672), guest/guest. The queues are `jobs.submitted` and `jobs.submitted.dlq`; the DLQ is declared on first terminal failure.
 
 ```bash
-curl -s http://localhost:5200/jobs/{jobId}/status
-# Expected: status "Completed"
-# Wait a few seconds if still "Processing".
+curl -s -u guest:guest http://localhost:15672/api/queues/%2f/jobs.submitted
+curl -s -u guest:guest http://localhost:15672/api/queues/%2f/jobs.submitted.dlq
+
+docker compose --env-file .env.example exec postgres \
+  psql -U event_platform_user -d event_platform \
+  -c 'SELECT id, tenant_id, status, attempt_count, result, failure_reason FROM jobs ORDER BY created_utc DESC LIMIT 5;'
+docker compose --env-file .env.example exec postgres \
+  psql -U event_platform_user -d event_platform \
+  -c 'SELECT id, processed_utc, error FROM outbox_messages ORDER BY occurred_utc DESC LIMIT 5;'
 ```
 
-## Submit Forced-Failure Job
+Successful dispatch clears the outbox error and sets processed_utc. Failed rows retain an error and remain unprocessed for another dispatcher tick. Table/column names are lowercase; TenantId is a string.
 
-```bash
-curl -s -X POST http://localhost:5200/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"tenantId":"tenant-test","jobType":"ai.summary","payload":"{\"text\":\"Failure test\",\"forceFailure\":true}"}'
-# Expected: 201 Created, status "Pending"
-# Capture jobId from response.
-```
-
-## Verify Failed Job
-
-```bash
-curl -s http://localhost:5200/jobs/{jobId}/status
-# Expected: status "Failed", failureReason present.
-```
-
-## RabbitMQ Queue Check
-
-```bash
-curl -s -u guest:guest http://localhost:15672/api/queues/%2f/jobs-submitted | python3 -m json.tool
-```
-
-Check:
-- `messages` — should be 0 after processing.
-- `messages_ready` — should be 0.
-- `messages_unacknowledged` — should be 0.
-- `consumers` — should be >= 1 when Worker is running.
-
-Or use the management UI at `http://localhost:15672` (guest/guest).
-
-## PostgreSQL Check
-
-```bash
-docker exec -it event-platform-postgres psql -U postgres -d event_processing \
-  -c "SELECT \"JobId\", \"Status\", \"CreatedUtc\", \"StartedUtc\", \"CompletedUtc\", \"FailedUtc\", \"FailureReason\" FROM \"Jobs\" ORDER BY \"CreatedUtc\" DESC LIMIT 5;"
-```
-
-Or use DBeaver to inspect the `Jobs` table.
-
-## Build Check
+## Development Build and Tests
 
 ```bash
 dotnet build src/Platform.sln
-# Expected: Build succeeded, 0 errors.
+dotnet test src/Platform.sln
+python3.11 -m venv ai-service/.venv
+ai-service/.venv/bin/python -m pip install -r ai-service/requirements-dev.txt
+(cd ai-service && .venv/bin/python -m pytest)
+ai-service/.venv/bin/ruff check ai-service scripts
 ```
 
-## Final-Scope Verification (verified 2026-07-06)
+Expected: .NET build succeeds; 61 xUnit and 18 pytest cases pass. See README for running .NET hosts locally with `.env`, EF migrations and infrastructure-only Compose. See [SECURITY.md](../../SECURITY.md) for secret/dependency/image audit commands and scope.
 
-Prereq: `docker compose up -d postgres rabbitmq ai-service`, migrations applied, API + Worker running (or full `docker compose up --build`).
+## Stop
 
-1. Happy path with AI result:
-   - POST /jobs with a normal payload -> 201 Pending.
-   - Within ~5s, GET status -> `Completed` with a non-null `result` (stub summary) and `attemptCount: 0`.
+```bash
+docker compose --env-file .env.example down
+```
 
-2. Retry then dead-letter:
-   - POST /jobs with payload `{"forceFailure": true}` -> 201.
-   - Within ~10s, GET status -> `Failed`, `attemptCount: 2` (3 attempts total).
-   - RabbitMQ management UI (localhost:15672, guest/guest) -> Queues -> `jobs.submitted.dlq` has 1 message with an `x-failure-reason` header.
-
-3. Per-tenant rate limit:
-   - 12 rapid POSTs for one tenant -> first 10 return 201, then 429 with `Retry-After: 60` and JSON body naming the tenant.
-   - A POST for a different tenant during the same window -> 201.
-
-4. Outbox survives a broker outage:
-   - `docker stop event-platform-rabbitmq`, POST /jobs -> 201 (job + outbox row committed).
-   - `docker start event-platform-rabbitmq` -> within ~25s the dispatcher publishes and GET status -> `Completed`.
-
-5. AI service outage retry (optional):
-   - `docker stop event-platform-ai-service`, POST /jobs -> retries with backoff, then `Failed` + DLQ if the outage persists; restart the service and submit again -> `Completed`.
+Volumes are retained for later inspection. Do not run containerized and local API/worker hosts at the same time on the same ports/queues.

@@ -52,7 +52,7 @@ jobs:
         run: pip-audit -r ai-service/requirements-dev.txt
 
       - name: Lint
-        run: ruff check ai-service
+        run: ruff check ai-service scripts
 
       - name: Test
         run: pytest ai-service
@@ -76,6 +76,9 @@ jobs:
 
       - name: Start the full demo with the free stub provider
         run: docker compose --env-file .env.example up --build -d --wait --wait-timeout 180
+
+      - name: Verify contracts, processing, retries, dead letters, tenant limits, and broker recovery
+        run: python scripts/smoke_test.py --broker-outage --env-file .env.example
 
       - name: Scan all five runtime images for known vulnerabilities
         run: |
