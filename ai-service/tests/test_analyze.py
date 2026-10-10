@@ -1,3 +1,5 @@
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -50,5 +52,19 @@ def test_analyze_wrong_type_returns_422():
         "/v1/analyze",
         json={"job_id": "abc", "job_type": "report", "payload": 12345},
     )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("field,value", [
+    ("job_id", ""),
+    ("job_id", "x" * 129),
+    ("job_type", ""),
+    ("job_type", "x" * 256),
+    ("payload", ""),
+    ("payload", "x" * 65537),
+])
+def test_analyze_rejects_empty_or_oversized_fields(field, value):
+    response = client.post("/v1/analyze", json={**VALID_REQUEST, field: value})
 
     assert response.status_code == 422

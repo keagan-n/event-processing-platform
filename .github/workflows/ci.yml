@@ -6,20 +6,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   dotnet:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore src/Platform.sln
+        run: dotnet restore src/Platform.sln -p:NuGetAudit=true -p:NuGetAuditMode=all -warnaserror
 
       - name: Build
         run: dotnet build src/Platform.sln --no-restore --configuration Release
@@ -31,18 +36,62 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r ai-service/requirements.txt
+        run: pip install -r ai-service/requirements-dev.txt
+
+      - name: Audit Python dependencies
+        run: pip-audit -r ai-service/requirements-dev.txt
 
       - name: Lint
         run: ruff check ai-service
 
       - name: Test
         run: pytest ai-service
+
+  demo:
+    env:
+      AI_PROVIDER: stub
+      ANTHROPIC_API_KEY: ""
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Start the full demo with the free stub provider
+        run: docker compose --env-file .env.example up --build -d --wait --wait-timeout 180
+
+      - name: Scan all five runtime images for known vulnerabilities
+        run: |
+          mkdir -p "$RUNNER_TEMP/security-images"
+          for image in $(docker compose --env-file .env.example images -q | sort -u); do
+            docker save "$image" -o "$RUNNER_TEMP/security-images/image.tar"
+            docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+              -v "$RUNNER_TEMP/security-images:/audit" \
+              aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+              image --input /audit/image.tar --scanners vuln --exit-code 1 --cache-dir /audit/cache
+          done
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose --env-file .env.example logs --no-color
+
+      - name: Stop demo
+        if: always()
+        run: docker compose --env-file .env.example down

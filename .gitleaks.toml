@@ -1,0 +1,14 @@
+title = "Event Processing Platform secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "curl-auth-user"
+
+[[rules.allowlists]]
+description = "Only the documented RabbitMQ guest:guest local-demo credential"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^guest:guest$''']
+paths = ['''(^|/)(README\.md|SECURITY\.md|\.claude/commands/test-flow\.md|\.github/specs/manual-verification\.md)$''']

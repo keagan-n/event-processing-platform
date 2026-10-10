@@ -69,18 +69,22 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 
 - `GET /health` -> `{status, provider}`; `POST /v1/analyze` `{job_id, job_type, payload}` -> `{job_id, summary, model, latency_ms}`.
 - Providers: `stub` (default — deterministic, free, no keys) and `anthropic` (`claude-haiku-4-5`, only when `AI_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` set).
-- 12 pytest tests; ruff-clean.
+- Request fields have Pydantic length bounds: job ID 1–128, job type 1–255, payload 1–65536 characters. The worker's input is already bounded to 64 KiB UTF-8 by submission validation.
+- 18 pytest tests; ruff-clean. Runtime dependencies and development/test tooling are separate.
 
 ### Tests and CI
 
-- `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (35, including HTTP AI-client contract and UTF-8 payload-limit regressions), `src/Tests/Platform.Api.Tests` (5 limiter cases) — 61 xUnit cases, plus 12 pytest cases: 73 total.
-- `.github/workflows/ci.yml` — dotnet build+test and python ruff+pytest jobs on push/PR to main.
+- `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (35, including HTTP AI-client contract and UTF-8 payload-limit regressions), `src/Tests/Platform.Api.Tests` (5 limiter cases) — 61 xUnit cases, plus 18 pytest cases: 79 total.
+- `.github/workflows/ci.yml` — dotnet build+test, python ruff+pytest, and a full Compose startup/runtime-image scan job on push/PR to main. The container job forces the free stub provider.
+- CI fails on NuGet/Python advisory findings and Trivy runtime-image findings at any severity. `.github/workflows/security.yml` scans full Git history and current files with Gitleaks. Actions/scanners are pinned, checkout credentials are not persisted, and workflow permissions are read-only.
 
 ### Local Development
 
 - `docker compose up --build` runs the full stack: postgres, rabbitmq (+ management UI :15672), ai-service (:8000), api (:5200, auto-migrates), worker. Healthcheck-ordered startup.
 - Infra-only + `dotnet run` flow still works (see README).
-- Secrets from `.env` via DotNetEnv with `NoClobber()` so process environment variables win. The API pins Microsoft.OpenApi 2.7.5 to fix the vulnerable transitive dependency.
+- Secrets from `.env` via DotNetEnv with `NoClobber()` so process environment variables win; `.env.example` includes the local .NET connection string. Compose constructs its container connection string from `POSTGRES_*`. Queue/DLQ names are wired into hosts, and worker startup waits for AI health. The API pins Microsoft.OpenApi 2.7.5 to fix the vulnerable transitive dependency.
+- All published ports bind to loopback. Runtime images use digest-pinned Alpine bases with distro security updates. PostgreSQL's bundled Go helper is replaced with Alpine `su-exec`; the AI image excludes dev tools and removes installers after dependency installation. API/worker/AI run as non-root with read-only filesystems, dropped capabilities, and bounded temporary storage; all services disable privilege escalation.
+- `.env` and private key material are excluded from Git and Docker build contexts. PostgreSQL Alpine/RabbitMQ 4 use fresh volumes; old volume declarations remain for preservation.
 
 ## Verified End-to-End (2026-07-06)
 

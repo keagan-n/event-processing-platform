@@ -1,0 +1,13 @@
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/credentials*.json
+**/secrets*.json
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+tests/
+requirements-dev.txt

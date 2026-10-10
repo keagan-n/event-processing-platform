@@ -233,3 +233,11 @@ TestResults/
 .env
 .env.*
 !.env.example
+
+# Local credential/key material
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
