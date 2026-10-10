@@ -91,4 +91,52 @@ public sealed class JobSubmissionServiceTests
         Assert.Equal("report", persistedJob.JobType);
         Assert.Equal("{\"data\":\"hello\"}", persistedJob.Payload);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SubmitAsync_WhenIdentifierExceedsDatabaseLimit_ReturnsValidationError(bool tenant)
+    {
+        var oversized = new string('x', 256);
+        var command = new SubmitJobCommand(tenant ? oversized : "tenant", tenant ? "analysis" : oversized, "text");
+
+        var result = await _service.SubmitAsync(command, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains($"{(tenant ? "TenantId" : "JobType")} must be at most 255 characters.", result.Errors);
+        await _jobRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _outboxWriter.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WhenIdentifiersAreAtDatabaseLimit_Accepts()
+    {
+        var command = new SubmitJobCommand(new string('t', 255), new string('j', 255), "text");
+
+        Assert.True((await _service.SubmitAsync(command, CancellationToken.None)).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("x", 65537)]
+    [InlineData("é", 32769)]
+    public async Task SubmitAsync_WhenPayloadExceedsByteLimit_RejectsWithoutPersistence(string character, int length)
+    {
+        var payload = string.Concat(Enumerable.Repeat(character, length));
+
+        var result = await _service.SubmitAsync(new SubmitJobCommand("tenant", "analysis", payload), CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Payload must be at most 65536 UTF-8 bytes.", result.Errors);
+        await _jobRepository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        await _outboxWriter.DidNotReceiveWithAnyArgs().EnqueueAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WhenPayloadIsAtByteLimit_Accepts()
+    {
+        var result = await _service.SubmitAsync(
+            new SubmitJobCommand("tenant", "analysis", new string('x', 65536)), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+    }
 }

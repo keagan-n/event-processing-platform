@@ -44,6 +44,16 @@ public sealed class HttpAiAnalysisClient : IAiAnalysisClient
             throw new InvalidOperationException("AI service returned an empty analyze response.");
         }
 
+        if (!Guid.TryParse(httpResponse.JobId, out var responseJobId) || responseJobId != request.JobId)
+        {
+            throw new InvalidOperationException("AI service returned a response for a different job.");
+        }
+
+        if (string.IsNullOrWhiteSpace(httpResponse.Summary) || string.IsNullOrWhiteSpace(httpResponse.Model))
+        {
+            throw new InvalidOperationException("AI service returned an incomplete analyze response.");
+        }
+
         return new AiAnalysisResult(
             Summary: httpResponse.Summary,
             Model: httpResponse.Model);

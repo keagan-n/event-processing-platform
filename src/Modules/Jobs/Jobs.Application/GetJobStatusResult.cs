@@ -7,4 +7,5 @@ public sealed record GetJobStatusResult(
     string Status,
     DateTime CreatedUtc,
     string? Result,
-    int AttemptCount);
+    int AttemptCount,
+    string? FailureReason);

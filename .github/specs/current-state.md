@@ -2,7 +2,7 @@
 
 ## Summary
 
-All completion-plan milestones (1-6) are implemented. The platform is feature-complete per `.github/specs/completion-plan.md`.
+The completion-plan feature set is implemented. This is a single-instance demo with explicit crash-recovery limitations, not a production reliability guarantee (see below).
 
 The working flow is:
 
@@ -23,8 +23,8 @@ PostgreSQL is the system of record for all job and outbox state.
 ### API (`Platform.Api`)
 
 - `GET /health`
-- `POST /jobs` — validates (400), rate-limits per tenant (429 + Retry-After), persists job + outbox row atomically (201). No inline RabbitMQ publish.
-- `GET /jobs/{jobId}/status` — returns `jobId`, `tenantId`, `jobType`, `status`, `createdUtc`, `result` (nullable), `attemptCount`.
+- `POST /jobs` — validates required fields, trimmed identifier lengths (255 maximum), and trimmed payload size (64 KiB UTF-8 maximum, 400). Kestrel caps the whole request body at 256 KiB (413). Rate-limits per tenant (429 + Retry-After), persists job + outbox row atomically (201). No inline RabbitMQ publish. `Location` points to `/jobs/{jobId}/status`.
+- `GET /jobs/{jobId}/status` — returns `jobId`, `tenantId`, `jobType`, `status`, `createdUtc`, `result` (nullable), `attemptCount`, `failureReason` (nullable).
 - `TenantRateLimiter` — in-memory `PartitionedRateLimiter` token bucket per TenantId. Env: `RATE_LIMIT_TOKENS` (10), `RATE_LIMIT_WINDOW_SECONDS` (60). Applied inside the endpoint because the partition key comes from the request body.
 - `OutboxDispatcherService` — BackgroundService polling every `OUTBOX_POLL_SECONDS` (2), publishing batches of 20 via `IOutboxProcessor`; failed rows keep `Error` and stay unprocessed for the next tick.
 - `APPLY_MIGRATIONS=true` env applies EF migrations on startup (used by docker compose).
@@ -46,7 +46,7 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 ### Application (`Jobs.Application`)
 
 - `JobSubmissionService` — validates, trims, stages job + outbox message, single `SaveChangesAsync` (transactional outbox). Depends on `IOutboxWriter`, not the queue publisher.
-- `JobProcessingService` — returns `JobProcessingResult` (`Completed` | `Skipped` | `RetryScheduled` | `FailedPermanently`). Non-Pending jobs are skipped (idempotency guard for at-least-once delivery). On failure: `MarkPendingForRetry` while `AttemptCount + 1 < MaxAttempts`, else `MarkFailed`. Never rethrows processing failures — the outcome drives the consumer. `forceFailure` payload follows the same retry-then-DLQ path.
+- `JobProcessingService` — returns `JobProcessingResult` (`Completed` | `Skipped` | `RetryScheduled` | `FailedPermanently`). Non-Pending jobs are skipped (idempotency guard for at-least-once delivery). On failure: `MarkPendingForRetry` while `AttemptCount + 1 < MaxAttempts`, else `MarkFailed`. AI failures return outcomes; cancellation and persistence failures propagate. The completion save is outside the AI-failure handler so a database error is not masked by an illegal status transition. Plain text and non-object JSON payloads are accepted. `forceFailure` payload follows the same retry-then-DLQ path.
 - `JobProcessingOptions.MaxAttempts` (env `JOB_MAX_ATTEMPTS`, default 3).
 - `OutboxProcessor` / `IOutboxStore` / `IOutboxWriter` / `OutboxOptions` — outbox orchestration lives in Application; EF implementations in Infrastructure.
 - `IAiAnalysisClient` + `AiAnalysisRequest`/`AiAnalysisResult` records.
@@ -56,8 +56,8 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 
 - `JobsDbContext` — `jobs` + `outbox_messages` tables. Migrations: InitialJobsSchema, AddJobLifecycleFields, AddJobResult, AddJobAttemptCount, AddOutboxMessages.
 - `JobRepository`, `EfOutboxWriter` (stages in caller's unit of work), `EfOutboxStore`.
-- `RabbitMqJobQueuePublisher` — declares queues on publish; DLQ name from `RabbitMqOptions.DeadLetterQueueName` (env `RABBITMQ_DLQ_NAME`, default `jobs.submitted.dlq`).
-- `HttpAiAnalysisClient` — typed HttpClient, snake_case JSON matching the FastAPI contract.
+- `RabbitMqJobQueuePublisher` — declares durable queues, sends persistent messages with `MessageId`, uses mandatory routing and waits for broker confirms (10-second timeout) before returning; DLQ name from `RabbitMqOptions.DeadLetterQueueName` (env `RABBITMQ_DLQ_NAME`, default `jobs.submitted.dlq`).
+- `HttpAiAnalysisClient` — typed HttpClient, snake_case JSON matching the FastAPI contract; validates the response job ID and nonempty summary/model.
 
 ### Worker (`Platform.Worker`)
 
@@ -73,14 +73,14 @@ Processing -> Pending (retry)    MarkPendingForRetry()  [increments AttemptCount
 
 ### Tests and CI
 
-- `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (13), `src/Tests/Platform.Api.Tests` (5) — 39 xUnit tests.
+- `src/Tests/Jobs.Domain.Tests` (21), `src/Tests/Jobs.Application.Tests` (35, including HTTP AI-client contract and UTF-8 payload-limit regressions), `src/Tests/Platform.Api.Tests` (5 limiter cases) — 61 xUnit cases, plus 12 pytest cases: 73 total.
 - `.github/workflows/ci.yml` — dotnet build+test and python ruff+pytest jobs on push/PR to main.
 
 ### Local Development
 
 - `docker compose up --build` runs the full stack: postgres, rabbitmq (+ management UI :15672), ai-service (:8000), api (:5200, auto-migrates), worker. Healthcheck-ordered startup.
 - Infra-only + `dotnet run` flow still works (see README).
-- Secrets from `.env` via DotNetEnv; `.env.example` lists every knob.
+- Secrets from `.env` via DotNetEnv with `NoClobber()` so process environment variables win. The API pins Microsoft.OpenApi 2.7.5 to fix the vulnerable transitive dependency.
 
 ## Verified End-to-End (2026-07-06)
 
@@ -99,6 +99,12 @@ separate outbox relay deployable, OpenTelemetry/Jaeger tracing,
 TTL delayed-retry queue, distributed rate limiting
 ```
 
-## Outbox Tradeoff (RESOLVED)
+## Delivery Guarantees and Limits
 
-The MVP originally published to RabbitMQ after the DB commit, accepting that a publish failure after save could lose dispatch. Milestone 5 closed this: job + outbox row commit in one transaction and the dispatcher publishes out-of-band. Delivery is now at-least-once; the consumer's non-Pending skip guard makes processing idempotent.
+The original publish-after-save gap on submission is resolved: job + outbox row commit atomically, and the dispatcher marks a row processed only after a confirmed, routable publish. Broker downtime leaves the message staged for later dispatch. Confirmation followed by a crash before the processed-row update can cause duplicates.
+
+The non-Pending guard handles sequential duplicate deliveries; it is not an atomic claim and does not make multiple workers safe against races. Run one API/dispatcher and one worker for the demonstrated behavior. Prefetch bounds unacknowledged deliveries; the current consumer processes callbacks serially.
+
+Retry/DLQ publication remains separate from job-state persistence, so failure between the two operations can lose the retry/dead letter. Unexpected consumer exceptions are nacked without requeue. A crash or shutdown after persisting Processing can strand a job because recovery leases are not implemented. Consequently there is no end-to-end exactly-once or arbitrary-crash-recovery guarantee.
+
+`attemptCount` counts scheduled job retries, not the HTTP client's in-process retries. Message retries republish immediately; HTTP retries use backoff/jitter on transient errors. Forced failures bypass the HTTP client and can exhaust quickly. `/health` is liveness only.

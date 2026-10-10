@@ -3,6 +3,7 @@ using System.Text.Json;
 using Jobs.Application;
 using Jobs.Contracts;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 namespace Jobs.Infrastructure.Queue;
 
@@ -81,6 +82,14 @@ public sealed class RabbitMqJobQueuePublisher : IJobQueuePublisher
 
         var properties = channel.CreateBasicProperties();
         properties.Persistent = true;
+        properties.MessageId = message.JobId.ToString();
+
+        // A successful socket write is not proof that the broker accepted
+        // the message. Outbox rows and consumer deliveries must only be
+        // acknowledged after a routed publish has been confirmed.
+        BasicReturnEventArgs? returned = null;
+        channel.BasicReturn += (_, args) => returned = args;
+        channel.ConfirmSelect();
 
         if (headers is not null)
         {
@@ -90,7 +99,16 @@ public sealed class RabbitMqJobQueuePublisher : IJobQueuePublisher
         channel.BasicPublish(
             exchange: string.Empty,
             routingKey: queueName,
+            mandatory: true,
             basicProperties: properties,
             body: body);
+
+        channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(10));
+
+        if (returned is not null)
+        {
+            throw new InvalidOperationException(
+                $"RabbitMQ returned message for {queueName}: {returned.ReplyText}.");
+        }
     }
 }

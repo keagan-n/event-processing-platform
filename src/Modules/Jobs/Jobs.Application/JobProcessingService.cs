@@ -43,6 +43,8 @@ public sealed class JobProcessingService : IJobProcessingService
         job.MarkProcessing();
         await _jobRepository.SaveChangesAsync(cancellationToken);
 
+        AiAnalysisResult analysisResult;
+
         try
         {
             if (ShouldForceFailure(job.Payload))
@@ -55,21 +57,14 @@ public sealed class JobProcessingService : IJobProcessingService
                 JobType: job.JobType,
                 Payload: job.Payload);
 
-            var analysisResult = await _aiAnalysisClient.AnalyzeAsync(
+            analysisResult = await _aiAnalysisClient.AnalyzeAsync(
                 analysisRequest,
                 cancellationToken);
 
-            job.MarkCompleted(analysisResult.Summary);
-            await _jobRepository.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Job completed. JobId: {JobId}, TenantId: {TenantId}, AttemptCount: {AttemptCount}, Model: {Model}",
-                job.Id,
-                job.TenantId,
-                job.AttemptCount,
-                analysisResult.Model);
-
-            return JobProcessingResult.Completed();
+            if (string.IsNullOrWhiteSpace(analysisResult.Summary))
+            {
+                throw new InvalidOperationException("AI service returned an empty summary.");
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -104,6 +99,21 @@ public sealed class JobProcessingService : IJobProcessingService
 
             return JobProcessingResult.FailedPermanently(exception.Message);
         }
+
+        // Persistence failures are infrastructure failures, not AI failures.
+        // Do not try to transition a Completed entity back to Pending/Failed
+        // when the completion save throws; preserve the original exception.
+        job.MarkCompleted(analysisResult.Summary);
+        await _jobRepository.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Job completed. JobId: {JobId}, TenantId: {TenantId}, AttemptCount: {AttemptCount}, Model: {Model}",
+            job.Id,
+            job.TenantId,
+            job.AttemptCount,
+            analysisResult.Model);
+
+        return JobProcessingResult.Completed();
     }
 
     private static bool ShouldForceFailure(string payload)
@@ -112,7 +122,8 @@ public sealed class JobProcessingService : IJobProcessingService
         {
             using var document = JsonDocument.Parse(payload);
 
-            if (!document.RootElement.TryGetProperty("forceFailure", out var forceFailureElement))
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("forceFailure", out var forceFailureElement))
             {
                 return false;
             }

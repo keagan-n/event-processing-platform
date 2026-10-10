@@ -9,9 +9,12 @@ using Platform.Api.RateLimiting;
 using Serilog;
 using Serilog.Formatting.Compact;
 
-Env.TraversePath().Load();
+Env.NoClobber().TraversePath().Load();
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Bound JSON request buffering; application validation caps the payload too.
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 256 * 1024);
 
 // Structured JSON console logging
 builder.Services.AddSerilog(configuration => configuration
@@ -133,7 +136,7 @@ app.MapPost("/jobs", async (
     }
 
     var command = new SubmitJobCommand(
-        TenantId: request.TenantId,
+        TenantId: request.TenantId ?? string.Empty,
         JobType: request.JobType,
         Payload: request.Payload);
 
@@ -155,7 +158,7 @@ app.MapPost("/jobs", async (
         Status: result.Status,
         CreatedUtc: result.CreatedUtc);
 
-    return Results.Created($"/jobs/{response.JobId}", response);
+    return Results.Created($"/jobs/{response.JobId}/status", response);
 })
 .WithName("SubmitJob");
 
@@ -183,7 +186,8 @@ app.MapGet("/jobs/{jobId:guid}/status", async (
         Status: result.Status,
         CreatedUtc: result.CreatedUtc,
         Result: result.Result,
-        AttemptCount: result.AttemptCount);
+        AttemptCount: result.AttemptCount,
+        FailureReason: result.FailureReason);
 
     return Results.Ok(response);
 })

@@ -165,4 +165,77 @@ public sealed class JobProcessingServiceTests
         Assert.Null(job.Result);
         await _jobRepository.Received(2).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
+
+    [Theory]
+    [InlineData("plain text")]
+    [InlineData("[]")]
+    [InlineData("123")]
+    [InlineData("null")]
+    public async Task ProcessJobAsync_WithNonObjectPayload_Completes(string payload)
+    {
+        var job = Job.Create("tenant-1", "analysis", payload);
+        _jobRepository.GetByIdAsync(job.Id, Arg.Any<CancellationToken>()).Returns(job);
+        _aiAnalysisClient.AnalyzeAsync(Arg.Any<AiAnalysisRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AiAnalysisResult("Summary.", "stub"));
+
+        var result = await _service.ProcessJobAsync(job.Id, CancellationToken.None);
+
+        Assert.Equal(JobProcessingOutcome.Completed, result.Outcome);
+        Assert.Equal("Summary.", job.Result);
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_WhenCompletionSaveFails_PreservesPersistenceException()
+    {
+        var job = Job.Create("tenant-1", "analysis", "text");
+        _jobRepository.GetByIdAsync(job.Id, Arg.Any<CancellationToken>()).Returns(job);
+        _aiAnalysisClient.AnalyzeAsync(Arg.Any<AiAnalysisRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AiAnalysisResult("Summary.", "stub"));
+        var failure = new IOException("Database disconnected during completion.");
+        _jobRepository.SaveChangesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask, Task.FromException(failure));
+
+        var thrown = await Assert.ThrowsAsync<IOException>(
+            () => _service.ProcessJobAsync(job.Id, CancellationToken.None));
+
+        Assert.Same(failure, thrown);
+        Assert.Equal(0, job.AttemptCount);
+        await _jobRepository.Received(2).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_WhenAiSummaryIsEmpty_SchedulesRetry()
+    {
+        var job = Job.Create("tenant-1", "analysis", "text");
+        _jobRepository.GetByIdAsync(job.Id, Arg.Any<CancellationToken>()).Returns(job);
+        _aiAnalysisClient.AnalyzeAsync(Arg.Any<AiAnalysisRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new AiAnalysisResult(" ", "stub"));
+
+        var result = await _service.ProcessJobAsync(job.Id, CancellationToken.None);
+
+        Assert.Equal(JobProcessingOutcome.RetryScheduled, result.Outcome);
+        Assert.Equal(JobStatus.Pending, job.Status);
+        Assert.Null(job.Result);
+    }
+
+    [Fact]
+    public async Task ProcessJobAsync_WhenCanceled_DoesNotCountAsAiFailure()
+    {
+        var job = Job.Create("tenant-1", "analysis", "text");
+        using var cancellation = new CancellationTokenSource();
+        _jobRepository.GetByIdAsync(job.Id, Arg.Any<CancellationToken>()).Returns(job);
+        _aiAnalysisClient.AnalyzeAsync(Arg.Any<AiAnalysisRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                cancellation.Cancel();
+                return Task.FromCanceled<AiAnalysisResult>(cancellation.Token);
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ProcessJobAsync(job.Id, cancellation.Token));
+
+        Assert.Equal(0, job.AttemptCount);
+        Assert.Null(job.FailureReason);
+        await _jobRepository.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
 }

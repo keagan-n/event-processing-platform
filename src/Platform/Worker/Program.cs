@@ -10,7 +10,7 @@ using Polly;
 using Serilog;
 using Serilog.Formatting.Compact;
 
-Env.TraversePath().Load();
+Env.NoClobber().TraversePath().Load();
 
 var builder = Host.CreateApplicationBuilder(args);
 

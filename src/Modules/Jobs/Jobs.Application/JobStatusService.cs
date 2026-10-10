@@ -27,6 +27,7 @@ public sealed class JobStatusService : IJobStatusService
             Status: job.Status.ToString(),
             CreatedUtc: job.CreatedUtc,
             Result: job.Result,
-            AttemptCount: job.AttemptCount);
+            AttemptCount: job.AttemptCount,
+            FailureReason: job.FailureReason);
     }
 }

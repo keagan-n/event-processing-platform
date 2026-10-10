@@ -1,5 +1,6 @@
 using Jobs.Contracts;
 using Jobs.Domain;
+using System.Text;
 
 namespace Jobs.Application;
 
@@ -63,15 +64,27 @@ public sealed class JobSubmissionService : IJobSubmissionService
         {
             errors.Add("TenantId is required.");
         }
+        else if (command.TenantId.Trim().Length > 255)
+        {
+            errors.Add("TenantId must be at most 255 characters.");
+        }
 
         if (string.IsNullOrWhiteSpace(command.JobType))
         {
             errors.Add("JobType is required.");
         }
+        else if (command.JobType.Trim().Length > 255)
+        {
+            errors.Add("JobType must be at most 255 characters.");
+        }
 
         if (string.IsNullOrWhiteSpace(command.Payload))
         {
             errors.Add("Payload is required.");
+        }
+        else if (Encoding.UTF8.GetByteCount(command.Payload.Trim()) > 64 * 1024)
+        {
+            errors.Add("Payload must be at most 65536 UTF-8 bytes.");
         }
 
         return errors;
